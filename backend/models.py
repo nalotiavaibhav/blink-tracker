@@ -2,12 +2,11 @@
 Database models for Wellness at Work (WaW) Eye Tracker
 Based on PRD specifications
 """
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.sql import func
 from datetime import datetime
-import uuid
 
 Base = declarative_base()
 
@@ -54,6 +53,36 @@ class BlinkSample(Base):
     def __repr__(self):
         return f"<BlinkSample(id={self.id}, user_id={self.user_id}, blink_count={self.blink_count})>"
 
+
+class TrackingSession(Base):
+    """A single summary row per tracking session (start/end/total blinks)."""
+    __tablename__ = 'tracking_sessions'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'device_id', 'client_session_id', name='uq_session_per_device'),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    client_session_id = Column(String(64), nullable=False)
+    started_at_utc = Column(DateTime, nullable=False)
+    ended_at_utc = Column(DateTime, nullable=False)
+    total_blinks = Column(Integer, nullable=False, default=0)
+    device_id = Column(String(255), nullable=False)
+    app_version = Column(String(50), nullable=False)
+
+    avg_cpu_percent = Column(Float)
+    avg_memory_mb = Column(Float)
+    energy_impact = Column(String(20))
+
+    sync_status = Column(String(20), default='synced')
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<TrackingSession(id={self.id}, user_id={self.user_id}, total_blinks={self.total_blinks})>"
+
 class UserSession(Base):
     """Track user login sessions for JWT management"""
     __tablename__ = 'user_sessions'
@@ -70,20 +99,63 @@ class UserSession(Base):
     def __repr__(self):
         return f"<UserSession(id={self.id}, user_id={self.user_id}, active={self.is_active})>"
 
+class EmailOTP(Base):
+    """Stores email OTP codes for signup/verification."""
+    __tablename__ = 'email_otps'
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(255), nullable=False, index=True)
+    code = Column(String(10), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    consumed = Column(Boolean, default=False, nullable=False)
+
+    def __repr__(self):
+        return f"<EmailOTP(email={self.email}, consumed={self.consumed})>"
+
+
+class UserPassword(Base):
+    """Stores password hashes for users (separate table to avoid ALTER TABLE migrations)."""
+    __tablename__ = 'user_passwords'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True)
+    password_hash = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<UserPassword(user_id={self.user_id})>"
+
 # Database connection utilities
-def create_database_engine(database_url: str = "sqlite:///waw_local.db"):
-    """Create database engine with proper settings"""
+def create_database_engine(database_url: str = "sqlite:///waw_local.db", *, echo: bool = False):
+    """Create database engine with proper settings.
+
+    - SQLite: allow multi-thread access for local dev.
+    - Postgres: enable pool_pre_ping for stale-connection recovery (useful on AWS RDS).
+    - Normalize legacy 'postgres://' scheme to 'postgresql://'.
+    """
+    # Normalize DSN scheme if needed (some providers still use postgres://)
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
     if database_url.startswith("sqlite"):
         # SQLite specific settings
         engine = create_engine(
-            database_url, 
-            echo=True,  # Log SQL queries for development
-            connect_args={"check_same_thread": False}  # Allow multiple threads
+            database_url,
+            echo=echo,  # Log SQL queries for development
+            connect_args={"check_same_thread": False},  # Allow multiple threads
         )
     else:
-        # PostgreSQL settings for production
-        engine = create_engine(database_url, echo=True)
-    
+        # PostgreSQL (or other SQLAlchemy-supported) settings for production
+        # pool_pre_ping helps avoid dropped-connection errors (e.g., RDS idle timeouts)
+        engine = create_engine(
+            database_url,
+            echo=echo,
+            pool_pre_ping=True,
+            pool_recycle=1800,  # recycle connections every 30 minutes
+        )
+
     return engine
 
 def get_session_maker(engine):
@@ -92,12 +164,9 @@ def get_session_maker(engine):
 
 def init_database(database_url: str = "sqlite:///waw_local.db"):
     """Initialize database with all tables"""
-    engine = create_database_engine(database_url)
+    engine = create_database_engine(database_url, echo=False)
     Base.metadata.create_all(engine)
     return engine, get_session_maker(engine)
-
-# Create default database connection for desktop app
-engine, SessionLocal = init_database()
 
 # Example usage for development
 if __name__ == "__main__":

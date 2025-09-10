@@ -1,44 +1,92 @@
 # Requirements for the Wellness at Work (WaW) Eye Tracker
 # Based on PRD specifications
 
-# Backend Dependencies (FastAPI + Database)
+######## Core runtime ########
+# Backend
+
+# Requirements for Wellness at Work (WaW)
+# Consolidated dependencies for backend, desktop, and build/packaging.
+#
+# Notes:
+# - Install into a virtual environment (recommended):
+#     python -m venv .venv; .\.venv\Scripts\Activate.ps1
+# - Adjust version pins if you need to match a specific platform or CI image.
+
+######## Core runtime (backend) ########
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.43
-alembic==1.13.1  # Database migrations
-psycopg2-binary==2.9.9  # PostgreSQL adapter for production
-python-multipart==0.0.6  # Form data support
-python-jose[cryptography]==3.3.0  # JWT token handling
-passlib[bcrypt]==1.7.4  # Password hashing
-python-dotenv==1.0.0  # Environment configuration
+python-dotenv==1.0.0
+python-jose[cryptography]==3.3.0
+google-auth==2.34.0
+google-auth-oauthlib==1.2.1
 
-# Desktop Application Dependencies (PyQt6)
-PyQt6>=6.4.2
-PyQt6-tools>=6.4.2
-psutil==5.9.6  # System performance monitoring
-opencv-python==4.8.1.78  # Computer vision for eye tracking
-mediapipe==0.10.8  # Google's ML framework for face detection
-requests==2.31.0  # HTTP client for API calls
-schedule==1.2.0  # Task scheduling
-keyring==24.3.0  # Secure credential storage
+######## Desktop & App Launcher ########
+# Qt GUI
+PyQt6>=6.5.0
+# System utilities
+psutil==5.9.6
+# Computer vision / ML
+opencv-python==4.8.1.78
+mediapipe==0.10.11
+numpy==1.26.4
+requests==2.31.0
 
-# Data Processing & Analysis
-pandas==2.1.4  # Data manipulation
-numpy==1.26.2  # Numerical computing
+# Windows desktop helper
+pywin32>=306; sys_platform == "win32"
 
-# Development & Testing
+######## Cryptography / TLS ########
+# cryptography is required by several libs (python-jose, requests extras, etc.)
+cryptography>=40.0.0
+
+######## Build / Packaging (tools used to produce .exe) ########
+pyinstaller==6.15.0
+pyinstaller-hooks-contrib>=2025.8
+Pillow>=10.0.0
+
+######## Optional / prod-only (install when needed) ########
+psycopg2-binary==2.9.9    # PostgreSQL (for AWS RDS)
+passlib[bcrypt]==1.7.4    # hashing
+alembic==1.13.1           # migrations (optional)
+
+######## Dev / testing ########
 pytest==7.4.3
 pytest-asyncio==0.21.1
-black==23.11.0  # Code formatting
-flake8==6.1.0  # Linting
-mypy==1.7.1  # Type checking
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+httpx==0.25.2
+rich==13.7.0
 
-# AWS Dependencies (for production deployment)
-boto3==1.35.0  # AWS SDK
-botocore==1.35.0
+# End of file
 
-# Additional utilities
-pydantic==2.5.1  # Data validation
-httpx==0.25.2  # Async HTTP client
-rich==13.7.0  # Rich terminal output
-typer==0.9.0  # CLI framework
+# Desktop & App Launcher
+PyQt6>=6.5.0  # Updated to suppress sipPyTypeDict() deprecation warnings
+psutil==5.9.6
+opencv-python==4.8.1.78
+mediapipe==0.10.11  # Updated for compatibility
+requests==2.31.0
+numpy==1.26.4  # Downgraded for MediaPipe compatibility
+
+# App Launcher specific (Windows)
+pywin32>=306; sys_platform == "win32"  # For Windows desktop shortcuts
+
+######## Optional / prod-only (install when needed) ########
+# alembic==1.13.1           # migrations
+psycopg2-binary==2.9.9    # PostgreSQL (for AWS RDS)
+# python-multipart==0.0.6   # forms/file uploads
+# python-jose[cryptography]==3.3.0  # JWT
+passlib[bcrypt]==1.7.4    # hashing
+# boto3==1.35.0
+# botocore==1.35.0
+
+######## Dev / testing ########
+# pytest==7.4.3
+# pytest-asyncio==0.21.1
+# black==23.11.0
+# flake8==6.1.0
+# mypy==1.7.1
+# pandas==2.1.4
+# httpx==0.25.2
+# rich==13.7.0
+# typer==0.9.0

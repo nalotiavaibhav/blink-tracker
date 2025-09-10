@@ -13,11 +13,14 @@ from datetime import datetime
 from typing import Dict, Optional, Callable
 import threading
 import queue
+from collections import deque
 
 # Initialize MediaPipe Face Mesh and drawing utils
 mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
+# https://github.com/tensorflow/tfjs-models/blob/838611c02f51159afdd77469ce67f0e26b7bbb23/face-landmarks-detection/src/mediapipe-facemesh/keypoints.ts
+#for better facial landmarks and improvised tracking
 # Eye landmark indices for left and right eyes (from MediaPipe Face Mesh)
 LEFT_EYE = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE = [362, 385, 387, 263, 373, 380]
@@ -49,7 +52,11 @@ class EyeTracker:
     def __init__(self, 
                  ear_threshold: float = 0.21,
                  consecutive_frames: int = 2,
-                 callback: Optional[Callable[[Dict], None]] = None):
+                 callback: Optional[Callable[[Dict], None]] = None,
+                 min_blink_interval_s: float = 0.35,
+                 open_frames_required: int = 2,
+                 hysteresis_delta: float = 0.03,
+                 smooth_window: int = 3):
         """
         Initialize the Eye Tracker.
         
@@ -58,8 +65,14 @@ class EyeTracker:
             consecutive_frames: Number of consecutive frames needed to confirm a blink
             callback: Optional callback function to receive blink data
         """
-        self.ear_threshold = ear_threshold
-        self.consecutive_frames = consecutive_frames
+        # Thresholds and detection tuning
+        self.ear_threshold = ear_threshold  # close threshold
+        self.consecutive_frames = consecutive_frames  # frames below close threshold to mark closed
+        self.min_blink_interval_s = min_blink_interval_s  # refractory period
+        self.open_frames_required = open_frames_required  # frames above open threshold to mark open
+        self.hysteresis_delta = hysteresis_delta  # open threshold offset
+        self.open_threshold = ear_threshold + hysteresis_delta
+        self.smooth_window = max(1, int(smooth_window))
         self.callback = callback
         
         # Tracking state
@@ -69,6 +82,12 @@ class EyeTracker:
         self.cap = None
         self.face_mesh = None
         
+        # Smoothing and state
+        self._ear_history = deque(maxlen=self.smooth_window)
+        self.eye_closed = False
+        self.closed_frames = 0
+        self.open_frames = 0
+
         # Threading
         self.thread = None
         self.data_queue = queue.Queue()
@@ -143,40 +162,57 @@ class EyeTracker:
         """Process a single frame for blink detection."""
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(rgb)
-        
+
         current_time = datetime.utcnow()
         blink_detected = False
-        
+
         if results.multi_face_landmarks:
             h, w, _ = frame.shape
             for face_landmarks in results.multi_face_landmarks:
                 # Get eye landmarks
-                left_eye = [(int(face_landmarks.landmark[i].x * w), 
+                left_eye = [(int(face_landmarks.landmark[i].x * w),
                             int(face_landmarks.landmark[i].y * h)) for i in LEFT_EYE]
-                right_eye = [(int(face_landmarks.landmark[i].x * w), 
+                right_eye = [(int(face_landmarks.landmark[i].x * w),
                              int(face_landmarks.landmark[i].y * h)) for i in RIGHT_EYE]
-                
-                # Calculate EAR
+
+                # Calculate EAR and apply simple smoothing
                 left_ear = eye_aspect_ratio(left_eye)
                 right_ear = eye_aspect_ratio(right_eye)
-                ear = (left_ear + right_ear) / 2.0
-                
-                # Blink detection logic
+                ear_raw = (left_ear + right_ear) / 2.0
+                self._ear_history.append(ear_raw)
+                ear = float(np.mean(self._ear_history)) if self._ear_history else ear_raw
+
+                # State-machine with hysteresis and refractory period
                 if ear < self.ear_threshold:
-                    self.frame_counter += 1
+                    self.closed_frames += 1
+                    self.open_frames = 0
+                    # Mark eye as closed after enough consecutive closed frames
+                    if not self.eye_closed and self.closed_frames >= self.consecutive_frames:
+                        self.eye_closed = True
+                elif ear > self.open_threshold:
+                    self.open_frames += 1
+                    self.closed_frames = 0
+                    # Transition from closed->open counts as one blink
+                    if self.eye_closed and self.open_frames >= self.open_frames_required:
+                        # Refractory period to prevent multiple counts per blink
+                        if (
+                            self.last_blink_time is None or
+                            (current_time - self.last_blink_time).total_seconds() >= self.min_blink_interval_s
+                        ):
+                            self.blink_count += 1
+                            self.last_blink_time = current_time
+                            blink_detected = True
+                        self.eye_closed = False
                 else:
-                    if self.frame_counter >= self.consecutive_frames:
-                        self.blink_count += 1
-                        self.last_blink_time = current_time
-                        blink_detected = True
-                    self.frame_counter = 0
-                
+                    # Between thresholds: do not change state, allow counters to persist
+                    pass
+
                 # Optional: Draw eye landmarks on frame
                 # for pt in left_eye + right_eye:
                 #     cv2.circle(frame, pt, 2, (0, 255, 0), -1)
-                # cv2.putText(frame, f'Blinks: {self.blink_count}', 
+                # cv2.putText(frame, f'Blinks: {self.blink_count}',
                 #            (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        
+
         # Return blink data
         return {
             'timestamp': current_time.isoformat(),

@@ -1,0 +1,29 @@
+{
+  "apiBase": "http://localhost:8000",
+  "appVersion": "1.0.0",
+  "googleClientId": "",
+  "googleClientSecret": "",
+  "buildTime": "2025-01-10 12:00:00",
+  "_comment": "This is a template file. Copy to app_config.json and configure for your deployment",
+  "_usage": {
+    "development": {
+      "apiBase": "http://localhost:8000",
+      "description": "Local development backend"
+    },
+    "staging": {
+      "apiBase": "https://staging-api.yourcompany.com",
+      "description": "Staging environment"
+    },
+    "production": {
+      "apiBase": "https://api.yourcompany.com",
+      "description": "Production environment"
+    }
+  },
+  "_notes": [
+    "apiBase: The base URL of your WaW backend server (required)",
+    "appVersion: Version number for the desktop application",
+    "googleClientId: OAuth client ID for Google sign-in (optional)",
+    "googleClientSecret: OAuth client secret for Google sign-in (optional)",
+    "buildTime: Timestamp when the application was built"
+  ]
+}

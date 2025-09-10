@@ -69,3 +69,9 @@ ENV/
 
 # Local databases
 waw_local.db
+desktop_settings.json
+
+# Next.js dashboard
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/

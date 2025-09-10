@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pytest_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual envs
+.venv/
+venv/
+
+# Logs & misc
+*.log
+*.sqlite3
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors/IDE
+.vscode/
+.idea/
+
+# Node
+node_modules/
+
+# Builds / dists
+build/
+dist/
+
+# Secrets (sample stays)
+.env
+.env.*
+!.env.example
+
+# Notebooks
+.ipynb_checkpoints/

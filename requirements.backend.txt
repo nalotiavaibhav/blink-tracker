@@ -1,0 +1,10 @@
+# Backend-only requirements for container image
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.43
+python-dotenv==1.0.0
+python-jose[cryptography]==3.3.0
+google-auth==2.34.0
+google-auth-oauthlib==1.2.1
+psycopg2-binary==2.9.9
+passlib[bcrypt]==1.7.4
