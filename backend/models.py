@@ -3,10 +3,15 @@ Database models for Wellness at Work (WaW) Eye Tracker
 Based on PRD specifications
 """
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.sql import func
 from datetime import datetime
+
+# Compatible import for both SQLAlchemy 1.x and 2.x
+try:
+    from sqlalchemy.orm import declarative_base
+except ImportError:
+    from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 

@@ -137,6 +137,15 @@ $hiddenImports = @(
     'uuid',
     'dotenv',
     'sqlite3',
+    'matplotlib',
+    'matplotlib.pyplot',
+    'numpy',
+    'sqlalchemy',
+    'sqlalchemy.ext',
+    'sqlalchemy.ext.declarative',
+    'sqlalchemy.orm',
+    'sqlalchemy.sql',
+    'sqlalchemy.engine',
     'desktop.eye_tracker',
     'shared.config',
     'shared.api',
@@ -154,6 +163,10 @@ $pyinstallerArgs += '--collect-all'
 $pyinstallerArgs += 'mediapipe'
 $pyinstallerArgs += '--collect-all'
 $pyinstallerArgs += 'cv2'
+$pyinstallerArgs += '--collect-all'
+$pyinstallerArgs += 'matplotlib'
+$pyinstallerArgs += '--collect-all'
+$pyinstallerArgs += 'sqlalchemy'
 
 # Find and include OpenSSL/cryptography binaries
 Write-Host "==> Searching for required binaries"
@@ -188,8 +201,7 @@ $excludeModules = @(
     'tests',
     'pytest', 
     'unittest',
-    'tkinter',
-    'matplotlib'
+    'tkinter'
 )
 
 foreach ($module in $excludeModules) {

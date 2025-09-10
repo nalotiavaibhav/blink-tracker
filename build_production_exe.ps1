@@ -131,12 +131,28 @@ Write-Host "==> Building single-file executable (this can take several minutes)"
     '--hidden-import', 'cv2',
     '--hidden-import', 'mediapipe',
     '--hidden-import', 'psutil',
-    '--hidden-import', 'PyQt6'
+    '--hidden-import', 'PyQt6',
+    '--hidden-import', 'matplotlib',
+    '--hidden-import', 'matplotlib.pyplot',
+    '--hidden-import', 'numpy',
+    '--hidden-import', 'sqlalchemy',
+    '--hidden-import', 'sqlalchemy.ext',
+    '--hidden-import', 'sqlalchemy.ext.declarative',
+    '--hidden-import', 'sqlalchemy.orm',
+    '--hidden-import', 'sqlalchemy.sql',
+    '--hidden-import', 'sqlalchemy.engine',
+    '--hidden-import', 'desktop.eye_tracker',
+    '--hidden-import', 'shared.config',
+    '--hidden-import', 'shared.api',
+    '--hidden-import', 'shared.db',
+    '--hidden-import', 'backend.models'
   )
 
   # add collect flags
   $args += '--collect-all'; $args += 'mediapipe'
   $args += '--collect-all'; $args += 'cv2'
+  $args += '--collect-all'; $args += 'matplotlib'
+  $args += '--collect-all'; $args += 'sqlalchemy'
 
   # append dynamically found data and binaries
   foreach ($d in $datas) { $args += '--add-data'; $args += $d }
