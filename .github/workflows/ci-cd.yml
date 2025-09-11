@@ -129,7 +129,7 @@ jobs:
     - name: 📦 Install ESLint Tooling
       working-directory: ./dashboard
       run: |
-        npm i -D eslint eslint-config-next @next/eslint-plugin-next
+        npm i -D eslint @eslint/js eslint-plugin-react eslint-config-next @next/eslint-plugin-next
       
     - name: 🔍 Lint Frontend Code
       working-directory: ./dashboard
@@ -281,7 +281,7 @@ jobs:
         .\build_desktop_exe.ps1 -BackendUrl "https://waw-backend-a28q.onrender.com" -SingleFile
         
     - name: 📤 Upload Windows Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wellness-at-work-windows
         path: dist/WellnessAtWork.exe
@@ -342,7 +342,7 @@ jobs:
           "dist/WellnessAtWork.app"
           
     - name: 📤 Upload macOS Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wellness-at-work-macos
         path: WellnessAtWork.dmg
@@ -374,7 +374,7 @@ jobs:
         echo "- **Build Date**: $(date)" >> release-notes.md
         
     - name: 📤 Upload Release Notes
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: release-notes
         path: release-notes.md
