@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: waw-dashboard
+    runtime: node
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_BASE
+        value: https://waw-backend-a28q.onrender.com
