@@ -46,7 +46,7 @@ jobs:
         
     - name: 📏 Import Sorting Check (isort)
       run: |
-        isort --check-only --diff backend/ desktop/ shared/
+        isort --check-only --diff --profile black backend/ desktop/ shared/
         
     - name: 🔍 Code Linting (Flake8)
       run: |
@@ -125,6 +125,11 @@ jobs:
     - name: 📦 Install Dependencies
       working-directory: ./dashboard
       run: npm ci
+
+    - name: 📦 Install ESLint Tooling
+      working-directory: ./dashboard
+      run: |
+        npm i -D eslint eslint-config-next @next/eslint-plugin-next
       
     - name: 🔍 Lint Frontend Code
       working-directory: ./dashboard
@@ -161,7 +166,19 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgl1-mesa-glx libegl1-mesa libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 libxi6 libxtst6
+        sudo apt-get install -y \
+          libgl1 \
+          libglx-mesa0 \
+          libegl1 \
+          libxrandr2 \
+          libxss1 \
+          libxcursor1 \
+          libxcomposite1 \
+          libasound2t64 \
+          libxi6 \
+          libxtst6 \
+          libdbus-1-3 \
+          libxkbcommon-x11-0
         
     - name: 📦 Install Python Dependencies
       run: |
