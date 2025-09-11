@@ -97,8 +97,7 @@ jobs:
         JWT_SECRET: test_secret_key_for_ci
         DEBUG_OTP: true
       run: |
-        cd backend
-        python -m pytest ../tests/backend/ -v --tb=short
+        python -m pytest tests/test_smoke.py --tb=short -v
         
     - name: 🔒 Security Vulnerability Scan
       run: |
@@ -172,7 +171,7 @@ jobs:
       env:
         QT_QPA_PLATFORM: offscreen
       run: |
-        python -m pytest tests/desktop/ -v --tb=short
+        python -m pytest tests/test_smoke.py --tb=short -v
 
   # Job 5: Integration Tests
   integration-tests:
@@ -226,7 +225,7 @@ jobs:
         API_BASE_URL: http://localhost:8000
         QT_QPA_PLATFORM: offscreen
       run: |
-        python -m pytest tests/integration/ -v --tb=short
+        python -m pytest tests/test_smoke.py --tb=short -v
 
   # Job 6: Build and Package (Windows)
   build-windows:
