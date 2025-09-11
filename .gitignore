@@ -93,3 +93,6 @@ app_config.json
 # macOS build artifacts
 build/
 dist/
+
+# Large executable files
+*.exe
