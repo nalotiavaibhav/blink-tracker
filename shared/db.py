@@ -1,23 +1,25 @@
 """Shared DB helpers to keep app code simple."""
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
 from pathlib import Path
-import sys
 
 # Ensure project root on path when imported from subpackages
 project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from backend.models import init_database, User, BlinkSample  # type: ignore
 from datetime import datetime
 from typing import Optional
-from shared.config import CONFIG
 from typing import Optional as _Optional
+
+from backend.models import BlinkSample, User, init_database  # type: ignore
+from shared.config import CONFIG
 
 # Lazy, module-level cache for engine/sessionmaker
 _SESSION_LOCAL: _Optional[object] = None
+
 
 @contextmanager
 def db_session():
@@ -28,7 +30,9 @@ def db_session():
     with _SESSION_LOCAL() as session:  # type: ignore[operator]
         yield session
 
+
 # Simple CRUD helpers
+
 
 def get_or_create_default_user() -> User:
     with db_session() as db:
@@ -40,6 +44,7 @@ def get_or_create_default_user() -> User:
         db.commit()
         db.refresh(user)
         return user
+
 
 def store_blink_sample(
     user_id: int,
@@ -70,15 +75,17 @@ def store_blink_sample(
         db.refresh(sample)
         return sample
 
+
 def fetch_pending_samples(limit: int = 200) -> list[BlinkSample]:
     with db_session() as db:
         return (
             db.query(BlinkSample)
-            .filter(BlinkSample.sync_status != 'synced')
+            .filter(BlinkSample.sync_status != "synced")
             .order_by(BlinkSample.captured_at_utc.asc())
             .limit(limit)
             .all()
         )
+
 
 def mark_samples_synced(ids: list[int]) -> None:
     if not ids:
@@ -87,6 +94,6 @@ def mark_samples_synced(ids: list[int]) -> None:
         (
             db.query(BlinkSample)
             .filter(BlinkSample.id.in_(ids))
-            .update({BlinkSample.sync_status: 'synced'}, synchronize_session=False)
+            .update({BlinkSample.sync_status: "synced"}, synchronize_session=False)
         )
         db.commit()

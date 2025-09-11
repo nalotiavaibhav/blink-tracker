@@ -6,14 +6,16 @@ Values can be provided via (in order):
 """
 from __future__ import annotations
 
-import os
 import json
-from pathlib import Path
+import os
 from dataclasses import dataclass
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Ensure .env is loaded for desktop and scripts as well
 load_dotenv()
+
 
 def _load_file_config() -> dict:
     """Load optional app_config.json from project root.
@@ -21,16 +23,18 @@ def _load_file_config() -> dict:
     """
     try:
         root = Path(__file__).resolve().parents[1]
-        cfg_path = root / 'app_config.json'
+        cfg_path = root / "app_config.json"
         if cfg_path.exists():
-            with open(cfg_path, 'r', encoding='utf-8') as f:
+            with open(cfg_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 return data if isinstance(data, dict) else {}
     except Exception:
         pass
     return {}
 
+
 _FILE_CFG = _load_file_config()
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -44,7 +48,12 @@ class AppConfig:
         or _FILE_CFG.get("API_BASE_URL")
         or "https://waw-backend-a28q.onrender.com"  # Production default
     )
-    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", _FILE_CFG.get("googleClientId", ""))
-    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", _FILE_CFG.get("googleClientSecret", ""))
+    google_client_id: str = os.getenv(
+        "GOOGLE_CLIENT_ID", _FILE_CFG.get("googleClientId", "")
+    )
+    google_client_secret: str = os.getenv(
+        "GOOGLE_CLIENT_SECRET", _FILE_CFG.get("googleClientSecret", "")
+    )
+
 
 CONFIG = AppConfig()

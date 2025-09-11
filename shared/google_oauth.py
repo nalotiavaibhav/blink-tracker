@@ -9,7 +9,9 @@ except Exception:
     InstalledAppFlow = None  # type: ignore
 
 
-def get_google_id_token_interactive(client_id: str, client_secret: str) -> Optional[str]:
+def get_google_id_token_interactive(
+    client_id: str, client_secret: str
+) -> Optional[str]:
     """Run the Google Installed App OAuth flow and return an ID token.
 
     Uses the full userinfo.* scopes to avoid scope-mismatch errors sometimes raised
@@ -24,7 +26,9 @@ def get_google_id_token_interactive(client_id: str, client_secret: str) -> Optio
         "installed": {
             "client_id": client_id,
             "client_secret": client_secret,
-            "redirect_uris": ["http://localhost"],  # Desktop app type uses localhost loopback
+            "redirect_uris": [
+                "http://localhost"
+            ],  # Desktop app type uses localhost loopback
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }

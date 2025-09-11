@@ -3,40 +3,62 @@ WaW Desktop Application - Main Window
 Integrates eye tracking with PyQt6 GUI and backend sync
 """
 
-import sys
-import uuid
 import json
 import os
-import warnings
-from pathlib import Path
-import psutil
+import sys
 import time
+import uuid
+import warnings
 from datetime import datetime
+from pathlib import Path
 from typing import Dict
+
+import psutil
 
 # Suppress PyQt6 deprecation warnings about sipPyTypeDict()
 # These are harmless warnings from PyQt6 library internals
-warnings.filterwarnings("ignore", message=".*sipPyTypeDict.*", category=DeprecationWarning)
+warnings.filterwarnings(
+    "ignore", message=".*sipPyTypeDict.*", category=DeprecationWarning
+)
 
 # Ensure project root on sys.path so `backend` and `shared` can be imported
 project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPalette
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QProgressBar, QGroupBox,
-    QGridLayout, QStatusBar, QDialog, QFormLayout, QLineEdit, QMessageBox,
-    QComboBox, QMenuBar, QMenu, QTabWidget, QTableWidget, QTableWidgetItem,
-    QCheckBox, QSystemTrayIcon
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMenu,
+    QMenuBar,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QStatusBar,
+    QSystemTrayIcon,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import QTimer, QThread, pyqtSignal, Qt
-from PyQt6.QtGui import QFont, QPalette, QColor, QIcon, QAction
 
 from desktop.eye_tracker import EyeTracker
-from shared.db import get_or_create_default_user
-from shared.config import CONFIG
 from shared.api import ApiClient
+from shared.config import CONFIG
+from shared.db import get_or_create_default_user
+
 # from shared.google_oauth import get_google_id_token_interactive  # (Temporarily disabled) Google sign-in currently not functioning; UI removed.
 
 
@@ -44,32 +66,32 @@ def set_app_icon(widget):
     """Set the application icon for a QWidget (window or dialog)."""
     try:
         # For packaged executable, assets are bundled differently
-        is_frozen = getattr(sys, 'frozen', False)
-        
+        is_frozen = getattr(sys, "frozen", False)
+
         if is_frozen:
             # Running as packaged executable
             # For directory builds, use executable location; for single-file builds, use _MEIPASS
-            if hasattr(sys, '_MEIPASS'):
+            if hasattr(sys, "_MEIPASS"):
                 # Single-file build (--onefile)
                 base_path = Path(sys._MEIPASS)
             else:
                 # Directory build (default)
-                base_path = Path(sys.executable).parent / '_internal'
+                base_path = Path(sys.executable).parent / "_internal"
             icon_candidates = [
-                base_path / 'assets' / 'app.ico',
-                base_path / 'assets' / 'favicon.ico', 
-                base_path / 'assets' / 'android-chrome-192x192.png',
-                base_path / 'app.ico',  # PyInstaller sometimes puts it in root
-                base_path / 'favicon.ico',
+                base_path / "assets" / "app.ico",
+                base_path / "assets" / "favicon.ico",
+                base_path / "assets" / "android-chrome-192x192.png",
+                base_path / "app.ico",  # PyInstaller sometimes puts it in root
+                base_path / "favicon.ico",
             ]
         else:
             # Running in development
             icon_candidates = [
-                project_root / 'assets' / 'app.ico',
-                project_root / 'assets' / 'favicon.ico', 
-                project_root / 'assets' / 'android-chrome-192x192.png',
+                project_root / "assets" / "app.ico",
+                project_root / "assets" / "favicon.ico",
+                project_root / "assets" / "android-chrome-192x192.png",
             ]
-        
+
         for candidate in icon_candidates:
             if candidate.exists():
                 widget.setWindowIcon(QIcon(str(candidate)))
@@ -85,19 +107,24 @@ def force_window_to_front(widget):
         # Qt methods
         widget.raise_()
         widget.activateWindow()
-        
+
         # Windows-specific forcing
         import ctypes
+
         hwnd = int(widget.winId())
-        
+
         # Force window to foreground
         ctypes.windll.user32.SetForegroundWindow(hwnd)
         # Ensure it's not minimized
         ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
         # Temporarily make topmost to ensure visibility
-        ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # HWND_TOPMOST + SWP_NOMOVE + SWP_NOSIZE + SWP_SHOWWINDOW
+        ctypes.windll.user32.SetWindowPos(
+            hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010
+        )  # HWND_TOPMOST + SWP_NOMOVE + SWP_NOSIZE + SWP_SHOWWINDOW
         # Remove topmost flag for normal behavior
-        ctypes.windll.user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # HWND_NOTOPMOST
+        ctypes.windll.user32.SetWindowPos(
+            hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010
+        )  # HWND_NOTOPMOST
     except:
         pass  # Fail silently if forcing fails
 
@@ -105,24 +132,27 @@ def force_window_to_front(widget):
 def get_user_friendly_error(exception, base_url=""):
     """Convert technical API errors into user-friendly messages."""
     error_msg = str(exception).lower()
-    
+
     # Handle common connection errors
-    if any(phrase in error_msg for phrase in ['connection', 'refused', 'timeout', 'unreachable', 'port']):
-        if 'render' in base_url.lower():
+    if any(
+        phrase in error_msg
+        for phrase in ["connection", "refused", "timeout", "unreachable", "port"]
+    ):
+        if "render" in base_url.lower():
             return "Server is starting up (may take 30-60 seconds)..."
         else:
             return "Cannot connect to server. Please check your internet connection."
-    elif 'unauthorized' in error_msg or 'invalid' in error_msg or '401' in error_msg:
+    elif "unauthorized" in error_msg or "invalid" in error_msg or "401" in error_msg:
         return "Invalid credentials"
-    elif '404' in error_msg:
+    elif "404" in error_msg:
         return "Server not found. Please check the server URL."
-    elif '500' in error_msg or 'internal' in error_msg:
+    elif "500" in error_msg or "internal" in error_msg:
         return "Server error. Please try again later."
-    elif 'timeout' in error_msg:
+    elif "timeout" in error_msg:
         return "Server took too long to respond. Please try again."
-    elif '409' in error_msg or 'conflict' in error_msg:
+    elif "409" in error_msg or "conflict" in error_msg:
         return "Email already registered. Please login instead."
-    elif '422' in error_msg or 'validation' in error_msg:
+    elif "422" in error_msg or "validation" in error_msg:
         return "Invalid data provided. Please check your inputs."
     else:
         return "Operation failed. Please try again."
@@ -130,6 +160,7 @@ def get_user_friendly_error(exception, base_url=""):
 
 class PerformanceMonitor(QThread):
     """Thread to monitor blink-tracker application performance metrics."""
+
     performance_updated = pyqtSignal(dict)
 
     def __init__(self):
@@ -146,13 +177,15 @@ class PerformanceMonitor(QThread):
                 cpu_percent = self.process.cpu_percent(interval=1.0)
                 system_memory = psutil.virtual_memory()
                 memory_percent = (mem.rss / system_memory.total) * 100
-                self.performance_updated.emit({
-                    "cpu_percent": cpu_percent,
-                    "memory_used_mb": memory_mb,
-                    "memory_percent": memory_percent,
-                    "num_threads": self.process.num_threads(),
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
+                self.performance_updated.emit(
+                    {
+                        "cpu_percent": cpu_percent,
+                        "memory_used_mb": memory_mb,
+                        "memory_percent": memory_percent,
+                        "num_threads": self.process.num_threads(),
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
             except Exception as e:
                 print(f"Performance monitoring error: {e}")
             self.msleep(5000)
@@ -182,7 +215,9 @@ class WaWMainWindow(QMainWindow):
 
         self.init_ui()
         self.init_menu_bar()
-        self.performance_monitor.performance_updated.connect(self.update_performance_display)
+        self.performance_monitor.performance_updated.connect(
+            self.update_performance_display
+        )
         self.performance_monitor.start()
         self.init_sync_timer()
         self.load_user_session()
@@ -200,11 +235,13 @@ class WaWMainWindow(QMainWindow):
                         self.api = api
                         self.eye_tracker = EyeTracker(callback=self.on_blink_data)
                         self.start_stop_btn.setEnabled(True)
-                        self.sync_status_label.setText(f"Online as {user.get('email','')}")
+                        self.sync_status_label.setText(
+                            f"Online as {user.get('email','')}"
+                        )
                         self.sync_status_label.setStyleSheet("color: green;")
                         self.status_bar.showMessage("Auto login successful")
                         try:
-                            if hasattr(self, 'delete_account_btn'):
+                            if hasattr(self, "delete_account_btn"):
                                 self.delete_account_btn.setEnabled(True)
                                 self.update_delete_button_style()
                         except Exception:
@@ -229,7 +266,7 @@ class WaWMainWindow(QMainWindow):
                 self.sync_status_label.setStyleSheet("color: green;")
                 self.status_bar.showMessage("Login successful")
                 try:
-                    if hasattr(self, 'delete_account_btn'):
+                    if hasattr(self, "delete_account_btn"):
                         self.delete_account_btn.setEnabled(True)
                         self.update_delete_button_style()
                 except Exception:
@@ -239,8 +276,10 @@ class WaWMainWindow(QMainWindow):
                 except Exception:
                     pass
             else:
-                reason = getattr(self.api, 'last_token_error', None) or 'unknown'
-                self.status_bar.showMessage(f"Session invalid ({reason}); please re-login from Start Tracking")
+                reason = getattr(self.api, "last_token_error", None) or "unknown"
+                self.status_bar.showMessage(
+                    f"Session invalid ({reason}); please re-login from Start Tracking"
+                )
 
     def init_ui(self):
         """Build UI with compact tracking layout inside tab; keep everything in method scope."""
@@ -249,13 +288,14 @@ class WaWMainWindow(QMainWindow):
 
         # Set application icon
         set_app_icon(self)
-        
+
         # Initialize system tray
         self.init_system_tray()
-        
+
         # Additional Windows taskbar icon setup
         try:
             import ctypes
+
             # Force taskbar icon refresh by setting window attributes
             hwnd = int(self.winId())
             ctypes.windll.user32.SetWindowTextW(hwnd, "Wellness at Work - Eye Tracker")
@@ -321,7 +361,9 @@ class WaWMainWindow(QMainWindow):
         actions_row.setContentsMargins(0, 0, 0, 0)
         actions_row.addWidget(self.refresh_mydata_btn)
         self.delete_account_btn = QPushButton("Delete My Data")
-        self.delete_account_btn.setToolTip("Permanently delete your account and all associated data")
+        self.delete_account_btn.setToolTip(
+            "Permanently delete your account and all associated data"
+        )
         self.delete_account_btn.setFixedHeight(32)
         self.delete_account_btn.clicked.connect(self.delete_my_account)
         self.delete_account_btn.setEnabled(False)  # Enabled after successful auth
@@ -329,7 +371,9 @@ class WaWMainWindow(QMainWindow):
         actions_row.addStretch(1)
         my_layout.addLayout(actions_row)
         self.sessions_table = QTableWidget(0, 4)
-        self.sessions_table.setHorizontalHeaderLabels(["Ended At", "Session ID", "Blinks", "Energy"])
+        self.sessions_table.setHorizontalHeaderLabels(
+            ["Ended At", "Session ID", "Blinks", "Energy"]
+        )
         my_layout.addWidget(self.sessions_table)
         self.tabs.addTab(self.my_data_tab, "My Data")
 
@@ -350,49 +394,49 @@ class WaWMainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             print("System tray is not available on this system")
             return
-        
+
         # Create system tray icon
         self.tray_icon = QSystemTrayIcon(self)
-        
+
         # Set the tray icon (same as window icon)
         tray_icon_path = self.get_app_icon_path()
         if tray_icon_path:
             self.tray_icon.setIcon(QIcon(str(tray_icon_path)))
-        
+
         # Create context menu for tray icon
         tray_menu = QMenu()
-        
+
         # Show/Hide action
         self.show_hide_action = QAction("Show", self)
         self.show_hide_action.triggered.connect(self.toggle_window_visibility)
         tray_menu.addAction(self.show_hide_action)
-        
+
         tray_menu.addSeparator()
-        
+
         # Start/Stop tracking action
         self.tray_tracking_action = QAction("Start Tracking", self)
         self.tray_tracking_action.triggered.connect(self.toggle_tracking_from_tray)
         tray_menu.addAction(self.tray_tracking_action)
-        
+
         tray_menu.addSeparator()
-        
+
         # Exit action
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close_application)
         tray_menu.addAction(exit_action)
-        
+
         # Set the context menu
         self.tray_icon.setContextMenu(tray_menu)
-        
+
         # Connect double-click to show/hide
         self.tray_icon.activated.connect(self.tray_icon_activated)
-        
+
         # Set tooltip
         self.tray_icon.setToolTip("Wellness at Work - Eye Tracker")
-        
+
         # Show the tray icon
         self.tray_icon.show()
-        
+
         # Update tray icon based on current state
         self.update_tray_icon_state()
 
@@ -400,31 +444,31 @@ class WaWMainWindow(QMainWindow):
         """Get the path to the application icon."""
         try:
             # For packaged executable, assets are bundled differently
-            is_frozen = getattr(sys, 'frozen', False)
-            
+            is_frozen = getattr(sys, "frozen", False)
+
             if is_frozen:
                 # Running as packaged executable
-                if hasattr(sys, '_MEIPASS'):
+                if hasattr(sys, "_MEIPASS"):
                     # Single-file build (--onefile)
                     base_path = Path(sys._MEIPASS)
                 else:
                     # Directory build (default)
-                    base_path = Path(sys.executable).parent / '_internal'
+                    base_path = Path(sys.executable).parent / "_internal"
                 icon_candidates = [
-                    base_path / 'assets' / 'app.ico',
-                    base_path / 'assets' / 'favicon.ico', 
-                    base_path / 'assets' / 'android-chrome-192x192.png',
-                    base_path / 'app.ico',
-                    base_path / 'favicon.ico',
+                    base_path / "assets" / "app.ico",
+                    base_path / "assets" / "favicon.ico",
+                    base_path / "assets" / "android-chrome-192x192.png",
+                    base_path / "app.ico",
+                    base_path / "favicon.ico",
                 ]
             else:
                 # Running in development
                 icon_candidates = [
-                    project_root / 'assets' / 'app.ico',
-                    project_root / 'assets' / 'favicon.ico', 
-                    project_root / 'assets' / 'android-chrome-192x192.png',
+                    project_root / "assets" / "app.ico",
+                    project_root / "assets" / "favicon.ico",
+                    project_root / "assets" / "android-chrome-192x192.png",
                 ]
-            
+
             for candidate in icon_candidates:
                 if candidate.exists():
                     return candidate
@@ -446,19 +490,23 @@ class WaWMainWindow(QMainWindow):
 
     def toggle_tracking_from_tray(self):
         """Toggle tracking from system tray."""
-        if hasattr(self, 'start_stop_btn'):
+        if hasattr(self, "start_stop_btn"):
             self.start_stop_btn.click()
 
     def update_tray_icon_state(self):
         """Update tray icon and menu based on current tracking state."""
-        if hasattr(self, 'tray_tracking_action'):
-            if hasattr(self, 'eye_tracker') and self.eye_tracker and self.eye_tracker.is_running:
+        if hasattr(self, "tray_tracking_action"):
+            if (
+                hasattr(self, "eye_tracker")
+                and self.eye_tracker
+                and self.eye_tracker.is_running
+            ):
                 self.tray_tracking_action.setText("Stop Tracking")
-                if hasattr(self, 'tray_icon'):
+                if hasattr(self, "tray_icon"):
                     self.tray_icon.setToolTip("Wellness at Work - Tracking Active")
             else:
                 self.tray_tracking_action.setText("Start Tracking")
-                if hasattr(self, 'tray_icon'):
+                if hasattr(self, "tray_icon"):
                     self.tray_icon.setToolTip("Wellness at Work - Tracking Stopped")
 
     def tray_icon_activated(self, reason):
@@ -468,24 +516,24 @@ class WaWMainWindow(QMainWindow):
 
     def close_application(self):
         """Close the application completely."""
-        if hasattr(self, 'tray_icon'):
+        if hasattr(self, "tray_icon"):
             self.tray_icon.hide()
         self.close()
 
     def init_menu_bar(self):
         """Initialize menu bar with theme selection."""
         menubar = self.menuBar()
-        
+
         # View menu
         view_menu = menubar.addMenu("View")
-        
+
         # Theme submenu
         theme_menu = view_menu.addMenu("Theme")
-        
+
         # Light theme action
         light_action = theme_menu.addAction("Light Theme")
         light_action.triggered.connect(lambda: self.change_theme("light"))
-        
+
         # Dark theme action
         dark_action = theme_menu.addAction("Dark Theme")
         dark_action.triggered.connect(lambda: self.change_theme("dark"))
@@ -496,35 +544,35 @@ class WaWMainWindow(QMainWindow):
         self.apply_theme(theme_name)
         self.save_theme_preference(theme_name)
         self.update_theme_dependent_styles()
-        if hasattr(self, 'theme_combo'):
+        if hasattr(self, "theme_combo"):
             self.theme_combo.blockSignals(True)
             self.theme_combo.setCurrentText(theme_name.title())
             self.theme_combo.blockSignals(False)
-        if hasattr(self, 'status_bar'):
+        if hasattr(self, "status_bar"):
             self.status_bar.showMessage(f"Theme changed to {theme_name.title()}")
 
     def load_theme_preference(self):
         """Load saved theme preference."""
         try:
             if self.settings_file.exists():
-                with open(self.settings_file, 'r') as f:
+                with open(self.settings_file, "r") as f:
                     settings = json.load(f)
-                    return settings.get('theme', 'light')
+                    return settings.get("theme", "light")
         except Exception as e:
             print(f"Error loading theme preference: {e}")
-        return 'light'  # Default
+        return "light"  # Default
 
     def save_theme_preference(self, theme_name):
         """Save theme preference to file."""
         try:
             settings = {}
             if self.settings_file.exists():
-                with open(self.settings_file, 'r') as f:
+                with open(self.settings_file, "r") as f:
                     settings = json.load(f)
-            
-            settings['theme'] = theme_name
-            
-            with open(self.settings_file, 'w') as f:
+
+            settings["theme"] = theme_name
+
+            with open(self.settings_file, "w") as f:
                 json.dump(settings, f, indent=2)
         except Exception as e:
             print(f"Error saving theme preference: {e}")
@@ -642,7 +690,7 @@ class WaWMainWindow(QMainWindow):
 
         # Promote key buttons to primary look
         try:
-            if hasattr(self, 'start_stop_btn'):
+            if hasattr(self, "start_stop_btn"):
                 self.start_stop_btn.setObjectName("primaryButton")
         except Exception:
             pass
@@ -730,7 +778,7 @@ class WaWMainWindow(QMainWindow):
         """
         self.setStyleSheet(light_style)
         try:
-            if hasattr(self, 'start_stop_btn'):
+            if hasattr(self, "start_stop_btn"):
                 self.start_stop_btn.setObjectName("primaryButton")
         except Exception:
             pass
@@ -757,17 +805,17 @@ class WaWMainWindow(QMainWindow):
     def update_theme_dependent_styles(self):
         """Adjust inline-styled widgets to current theme (avoids invisible text)."""
         try:
-            if hasattr(self, 'title_label'):
-                if self.current_theme == 'dark':
+            if hasattr(self, "title_label"):
+                if self.current_theme == "dark":
                     self.title_label.setStyleSheet("color:#ffffff; letter-spacing:1px;")
                 else:
                     self.title_label.setStyleSheet("color:#1e2327; letter-spacing:1px;")
-            if hasattr(self, 'sessions_header'):
-                if self.current_theme == 'dark':
+            if hasattr(self, "sessions_header"):
+                if self.current_theme == "dark":
                     self.sessions_header.setStyleSheet("color:#ffffff;")
                 else:
                     self.sessions_header.setStyleSheet("color:#1e2327;")
-            if hasattr(self, 'delete_account_btn'):
+            if hasattr(self, "delete_account_btn"):
                 self.update_delete_button_style()
         except Exception:
             pass
@@ -799,21 +847,21 @@ class WaWMainWindow(QMainWindow):
     def create_performance_section(self):
         perf_group = QGroupBox("Application Performance")
         perf_layout = QGridLayout(perf_group)
-        
+
         perf_layout.addWidget(QLabel("CPU Usage:"), 0, 0)
         self.cpu_progress = QProgressBar()
         self.cpu_progress.setMaximum(100)
         self.cpu_label = QLabel("0%")
         perf_layout.addWidget(self.cpu_progress, 0, 1)
         perf_layout.addWidget(self.cpu_label, 0, 2)
-        
+
         perf_layout.addWidget(QLabel("Memory Usage:"), 1, 0)
         self.memory_progress = QProgressBar()
         self.memory_progress.setMaximum(100)  # Will show percentage
         self.memory_label = QLabel("0 MB")
         perf_layout.addWidget(self.memory_progress, 1, 1)
         perf_layout.addWidget(self.memory_label, 1, 2)
-        
+
         perf_layout.addWidget(QLabel("Threads:"), 2, 0)
         self.threads_label = QLabel("0")
         perf_layout.addWidget(self.threads_label, 2, 1)
@@ -887,7 +935,7 @@ class WaWMainWindow(QMainWindow):
         dlg = LoginDialog(
             default_base_url=CONFIG.api_base_url,
             parent=self,
-            theme=getattr(self, 'current_theme', 'light')
+            theme=getattr(self, "current_theme", "light"),
         )
         if dlg.exec() == QDialog.DialogCode.Accepted:
             base_url, token, user = dlg.get_result()
@@ -905,7 +953,7 @@ class WaWMainWindow(QMainWindow):
                 except Exception:
                     pass
                 try:
-                    if hasattr(self, 'delete_account_btn'):
+                    if hasattr(self, "delete_account_btn"):
                         self.delete_account_btn.setEnabled(True)
                         self.update_delete_button_style()
                 except Exception:
@@ -930,9 +978,11 @@ class WaWMainWindow(QMainWindow):
 
     def start_tracking(self):
         if not self.eye_tracker:
-            self.status_bar.showMessage("Eye tracker not initialized - please restart application")
+            self.status_bar.showMessage(
+                "Eye tracker not initialized - please restart application"
+            )
             return
-            
+
         if (self.api and self.api.is_authed) and self.eye_tracker.start_tracking():
             # Sequential session id: N_YYYYMMDD where N resets each day and continues after existing entries
             today_str = datetime.now().strftime("%Y%m%d")
@@ -941,16 +991,16 @@ class WaWMainWindow(QMainWindow):
                 self._session_counter_date = today_str
                 self._session_counter = 0
                 try:
-                    if hasattr(self, 'sessions_table'):
+                    if hasattr(self, "sessions_table"):
                         rows = self.sessions_table.rowCount()
                         for r in range(rows):
                             item = self.sessions_table.item(r, 1)
                             if not item:
                                 continue
-                            txt = (item.text() or '').strip()
-                            if txt.endswith('_' + today_str):
+                            txt = (item.text() or "").strip()
+                            if txt.endswith("_" + today_str):
                                 try:
-                                    n = int(txt.split('_', 1)[0])
+                                    n = int(txt.split("_", 1)[0])
                                     if n > self._session_counter:
                                         self._session_counter = n
                                 except Exception:
@@ -974,20 +1024,37 @@ class WaWMainWindow(QMainWindow):
             self.update_tray_icon_state()
         else:
             if not (self.api and self.api.is_authed):
-                self.status_bar.showMessage("Please login first (Start Tracking disabled)")
+                self.status_bar.showMessage(
+                    "Please login first (Start Tracking disabled)"
+                )
                 self.show_login_dialog()
             else:
-                self.status_bar.showMessage("Failed to start eye tracking - check camera access")
+                self.status_bar.showMessage(
+                    "Failed to start eye tracking - check camera access"
+                )
 
     def stop_tracking(self):
         # Build and upload one session summary before stopping/resetting
         ended_at = datetime.utcnow()
-        stats = self.eye_tracker.get_current_stats() if self.eye_tracker else {"blink_count": 0, "session_start": None}
+        stats = (
+            self.eye_tracker.get_current_stats()
+            if self.eye_tracker
+            else {"blink_count": 0, "session_start": None}
+        )
         started_at_iso = stats.get("session_start")
         total_blinks = int(stats.get("blink_count") or 0)
         try:
-            avg_cpu = (self._session_cpu_sum / self._session_metric_count) if self._session_metric_count else None
-            avg_mem = (self._session_mem_sum / self._session_metric_count) if self._session_metric_count else None
+            avg_cpu = (
+                (self._session_cpu_sum / self._session_metric_count)
+                if self._session_metric_count
+                else None
+            )
+            avg_mem = (
+                (self._session_mem_sum / self._session_metric_count)
+                if self._session_metric_count
+                else None
+            )
+
             def classify_energy(cpu, mem):
                 if cpu is None and mem is None:
                     return None
@@ -998,19 +1065,23 @@ class WaWMainWindow(QMainWindow):
                 if cpu_v >= 40 or mem_v >= 2000:
                     return "Medium"
                 return "Low"
+
             energy = classify_energy(avg_cpu, avg_mem)
             if self.api and self.api.is_authed and started_at_iso:
-                payload = [{
-                    "client_session_id": self._client_session_id or uuid.uuid4().hex[:16],
-                    "started_at_utc": started_at_iso,
-                    "ended_at_utc": ended_at.isoformat(),
-                    "total_blinks": total_blinks,
-                    "device_id": CONFIG.device_id,
-                    "app_version": CONFIG.app_version,
-                    "avg_cpu_percent": avg_cpu,
-                    "avg_memory_mb": avg_mem,
-                    "energy_impact": energy,
-                }]
+                payload = [
+                    {
+                        "client_session_id": self._client_session_id
+                        or uuid.uuid4().hex[:16],
+                        "started_at_utc": started_at_iso,
+                        "ended_at_utc": ended_at.isoformat(),
+                        "total_blinks": total_blinks,
+                        "device_id": CONFIG.device_id,
+                        "app_version": CONFIG.app_version,
+                        "avg_cpu_percent": avg_cpu,
+                        "avg_memory_mb": avg_mem,
+                        "energy_impact": energy,
+                    }
+                ]
                 try:
                     # Ensure token still valid; if not, attempt re-login once
                     if not self.api.validate_token():
@@ -1022,14 +1093,18 @@ class WaWMainWindow(QMainWindow):
                         if relog == QMessageBox.StandardButton.Yes:
                             self.show_login_dialog()
                         else:
-                            raise RuntimeError("User declined re-auth; session kept local.")
+                            raise RuntimeError(
+                                "User declined re-auth; session kept local."
+                            )
                     if self.api and self.api.is_authed:
                         self.api.upload_sessions(payload)
                         self.sync_status_label.setText("Session uploaded")
                         self.sync_status_label.setStyleSheet("color: green;")
                 except Exception as e:
                     # Non-fatal: stay local-only if offline
-                    self.sync_status_label.setText("Upload failed (session cached only)")
+                    self.sync_status_label.setText(
+                        "Upload failed (session cached only)"
+                    )
                     self.sync_status_label.setStyleSheet("color: orange;")
                     print(f"Session upload failed: {e}")
         finally:
@@ -1074,7 +1149,7 @@ class WaWMainWindow(QMainWindow):
         # Launch fresh login dialog (standalone) to restart flow
         login = LoginDialog(
             default_base_url=CONFIG.api_base_url,
-            theme=getattr(self, 'current_theme', 'light')
+            theme=getattr(self, "current_theme", "light"),
         )
         if login.exec() == QDialog.DialogCode.Accepted:
             base_url, token, user = login.get_result()
@@ -1094,6 +1169,7 @@ class WaWMainWindow(QMainWindow):
         self.blink_data_buffer.append(data)
         if not self.current_user:
             self.current_user = get_or_create_default_user()
+
     # Intentionally stop storing per-second samples; we'll upload only one summary per session
     # Kept buffer for potential in-memory use or future UI features.
 
@@ -1108,10 +1184,13 @@ class WaWMainWindow(QMainWindow):
             if stats["last_blink_time"]:
                 # Parse stored UTC ISO timestamp and convert to local system timezone
                 try:
-                    last_blink_utc = datetime.fromisoformat(stats["last_blink_time"].replace("Z", "+00:00"))
+                    last_blink_utc = datetime.fromisoformat(
+                        stats["last_blink_time"].replace("Z", "+00:00")
+                    )
                     if last_blink_utc.tzinfo is None:
                         # Assume UTC if tzinfo missing
                         from datetime import timezone
+
                         last_blink_utc = last_blink_utc.replace(tzinfo=timezone.utc)
                     # Convert to local timezone (no arg -> local)
                     last_blink_local = last_blink_utc.astimezone()
@@ -1125,17 +1204,17 @@ class WaWMainWindow(QMainWindow):
         cpu_percent = min(100, max(0, int(perf_data["cpu_percent"])))  # Clamp to 0-100
         self.cpu_progress.setValue(cpu_percent)
         self.cpu_label.setText(f"{cpu_percent}%")
-        
+
         # Update Memory usage for this application
         memory_percent = min(100, max(0, int(perf_data["memory_percent"])))
         memory_mb = round(perf_data["memory_used_mb"], 1)
         self.memory_progress.setValue(memory_percent)
         self.memory_label.setText(f"{memory_mb} MB ({memory_percent:.1f}%)")
-        
+
         # Update thread count
         num_threads = perf_data.get("num_threads", 0)
         self.threads_label.setText(str(num_threads))
-        
+
         # Accumulate session metrics while tracking
         if self.eye_tracker and self.eye_tracker.is_running:
             self._session_cpu_sum += float(perf_data.get("cpu_percent") or 0.0)
@@ -1152,16 +1231,22 @@ class WaWMainWindow(QMainWindow):
             self.sessions_table.insertRow(r)
             ended = row.get("ended_at_utc") or row.get("ended_at")
             self.sessions_table.setItem(r, 0, QTableWidgetItem(str(ended)))
-            self.sessions_table.setItem(r, 1, QTableWidgetItem(row.get("client_session_id","-")))
-            self.sessions_table.setItem(r, 2, QTableWidgetItem(str(row.get("total_blinks", 0))))
-            self.sessions_table.setItem(r, 3, QTableWidgetItem(str(row.get("energy_impact") or "-")))
+            self.sessions_table.setItem(
+                r, 1, QTableWidgetItem(row.get("client_session_id", "-"))
+            )
+            self.sessions_table.setItem(
+                r, 2, QTableWidgetItem(str(row.get("total_blinks", 0)))
+            )
+            self.sessions_table.setItem(
+                r, 3, QTableWidgetItem(str(row.get("energy_impact") or "-"))
+            )
 
     def update_delete_button_style(self):
         """Apply theme-aware danger styling to delete account button."""
         try:
-            if not hasattr(self, 'delete_account_btn'):
+            if not hasattr(self, "delete_account_btn"):
                 return
-            if self.current_theme == 'dark':
+            if self.current_theme == "dark":
                 self.delete_account_btn.setStyleSheet(
                     """
                     QPushButton { background:#2a1212; border:1px solid #612b2b; color:#ffb3b3; border-radius:8px; }
@@ -1185,7 +1270,9 @@ class WaWMainWindow(QMainWindow):
     def delete_my_account(self):
         """Allow user to permanently delete their account and all data via backend self-delete endpoint."""
         if not (self.api and self.api.is_authed):
-            self.status_bar.showMessage("Not authenticated; login first to delete account")
+            self.status_bar.showMessage(
+                "Not authenticated; login first to delete account"
+            )
             return
         confirm = QMessageBox.question(
             self,
@@ -1208,7 +1295,9 @@ class WaWMainWindow(QMainWindow):
                 pass
             self.api.delete_my_account()
         except Exception as e:
-            QMessageBox.critical(self, "Delete Failed", f"Could not delete account: {e}")
+            QMessageBox.critical(
+                self, "Delete Failed", f"Could not delete account: {e}"
+            )
             self.delete_account_btn.setEnabled(True)
             self.status_bar.showMessage("Delete failed")
             return
@@ -1217,7 +1306,11 @@ class WaWMainWindow(QMainWindow):
             delete_saved_auth()
         except Exception:
             pass
-        QMessageBox.information(self, "Account Deleted", "Your account and data have been deleted. The application will now exit.")
+        QMessageBox.information(
+            self,
+            "Account Deleted",
+            "Your account and data have been deleted. The application will now exit.",
+        )
         QApplication.instance().quit()
 
     def sync_data(self):
@@ -1243,19 +1336,19 @@ class WaWMainWindow(QMainWindow):
 
     def closeEvent(self, event):
         # Check if system tray is available and the close button was clicked
-        if hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
+        if hasattr(self, "tray_icon") and self.tray_icon.isVisible():
             # Hide to system tray instead of closing
             self.hide()
             self.show_hide_action.setText("Show")
             event.ignore()
-            
+
             # Show a notification the first time
-            if not hasattr(self, '_tray_notification_shown'):
+            if not hasattr(self, "_tray_notification_shown"):
                 self.tray_icon.showMessage(
                     "Wellness at Work",
                     "Application minimized to system tray. Right-click the tray icon to access options.",
                     QSystemTrayIcon.MessageIcon.Information,
-                    3000  # 3 seconds
+                    3000,  # 3 seconds
                 )
                 self._tray_notification_shown = True
         else:
@@ -1264,7 +1357,7 @@ class WaWMainWindow(QMainWindow):
                 self.eye_tracker.stop_tracking()
             if self.performance_monitor:
                 self.performance_monitor.stop()
-            if hasattr(self, 'tray_icon'):
+            if hasattr(self, "tray_icon"):
                 self.tray_icon.hide()
             event.accept()
 
@@ -1339,11 +1432,15 @@ class LoginDialog(QDialog):
         links_layout = QVBoxLayout(links_container)
         links_layout.setContentsMargins(0, 0, 0, 0)
         links_layout.setSpacing(10)
-        self.signup_label = QLabel("<span style='color:#aaa;'>Don't have an account?</span> <a href='signup' style='text-decoration:none; font-weight:600; color:#ffffff;'>Create an account</a>")
+        self.signup_label = QLabel(
+            "<span style='color:#aaa;'>Don't have an account?</span> <a href='signup' style='text-decoration:none; font-weight:600; color:#ffffff;'>Create an account</a>"
+        )
         self.signup_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.signup_label.setOpenExternalLinks(False)
         self.signup_label.linkActivated.connect(self._open_signup)
-        self.forgot_label = QLabel("<a href='forgot' style='text-decoration:none; font-weight:600; color:#ffffff;'>Forgot password?</a>")
+        self.forgot_label = QLabel(
+            "<a href='forgot' style='text-decoration:none; font-weight:600; color:#ffffff;'>Forgot password?</a>"
+        )
         self.forgot_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.forgot_label.setOpenExternalLinks(False)
         self.forgot_label.linkActivated.connect(self._open_forgot)
@@ -1359,7 +1456,7 @@ class LoginDialog(QDialog):
 
     def _apply_custom_style(self):
         """Apply style (dark or light) and primary gradient button based on theme."""
-        if self._theme == 'dark':
+        if self._theme == "dark":
             style = """
             QDialog { background-color: #0f1114; }
             QLineEdit {\n                background: #181b20;\n                border: 1px solid #2d3136;\n                border-radius: 8px;\n                padding: 9px 12px;\n                color: #e6e8eb;\n                font-size: 13px;\n            }\n            QLineEdit:focus { border: 1px solid #295fa6; outline: none; }\n            QPushButton#primaryButton {\n                border: none; border-radius: 8px; font-weight: 600; font-size: 14px; color: #ffffff;\n                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #0d47a1, stop:1 #0b3c91);\n            }\n            QPushButton#primaryButton:hover { background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #1560c6, stop:1 #104f9f); }\n            QPushButton#primaryButton:pressed { background: #0b3c91; }\n            QLabel#statusLabel { color: #7d8691; font-size: 11px; padding-left: 2px; }\n            QLabel { font-size: 12px; color:#d0d4d8; }\n            QLabel:hover { color: #dfe3e6; }\n            QCheckBox { color:#c5ccd3; background: transparent; spacing:6px; }\n            QCheckBox::indicator { width:16px; height:16px; border:1px solid #2d3136; border-radius:4px; background:#181b20; }\n            QCheckBox::indicator:hover { border-color:#295fa6; }\n            QCheckBox::indicator:checked { background: qlineargradient(spread:pad, x1:0,y1:0,x2:1,y2:1, stop:0 #0d47a1, stop:1 #0b3c91); border:1px solid #0d47a1; }\n            a { color: #ffffff; }\n            a:hover { text-decoration: underline; }\n            """
@@ -1370,29 +1467,39 @@ class LoginDialog(QDialog):
         self.setStyleSheet(style)
         # Adjust link label colors / HTML per theme
         try:
-            if hasattr(self, 'signup_label') and hasattr(self, 'forgot_label'):
-                if self._theme == 'light':
-                    self.signup_label.setText("<span style='color:#555f66;'>Don't have an account?</span> <a href='signup' style='text-decoration:none; font-weight:600; color:#1565c0;'>Create an account</a>")
-                    self.forgot_label.setText("<a href='forgot' style='text-decoration:none; font-weight:600; color:#1565c0;'>Forgot password?</a>")
+            if hasattr(self, "signup_label") and hasattr(self, "forgot_label"):
+                if self._theme == "light":
+                    self.signup_label.setText(
+                        "<span style='color:#555f66;'>Don't have an account?</span> <a href='signup' style='text-decoration:none; font-weight:600; color:#1565c0;'>Create an account</a>"
+                    )
+                    self.forgot_label.setText(
+                        "<a href='forgot' style='text-decoration:none; font-weight:600; color:#1565c0;'>Forgot password?</a>"
+                    )
                 else:
-                    self.signup_label.setText("<span style='color:#aaa;'>Don't have an account?</span> <a href='signup' style='text-decoration:none; font-weight:600; color:#ffffff;'>Create an account</a>")
-                    self.forgot_label.setText("<a href='forgot' style='text-decoration:none; font-weight:600; color:#ffffff;'>Forgot password?</a>")
+                    self.signup_label.setText(
+                        "<span style='color:#aaa;'>Don't have an account?</span> <a href='signup' style='text-decoration:none; font-weight:600; color:#ffffff;'>Create an account</a>"
+                    )
+                    self.forgot_label.setText(
+                        "<a href='forgot' style='text-decoration:none; font-weight:600; color:#ffffff;'>Forgot password?</a>"
+                    )
         except Exception:
             pass
 
     def _toggle_password_visibility(self, checked: bool):
-        self.pass_input.setEchoMode(QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
+        self.pass_input.setEchoMode(
+            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+        )
 
     def _on_login(self):
         email = self.email_input.text().strip()
         password = self.pass_input.text()
-        base_url = (self._base_url or '').strip().rstrip('/')
+        base_url = (self._base_url or "").strip().rstrip("/")
         if not email or not password or not base_url:
             self.status_label.setText("All fields are required")
             return
         self.login_btn.setEnabled(False)
         self.status_label.setText("Connecting to server...")
-        
+
         try:
             api = ApiClient(base_url)
             result = api.login(email=email, password=password)
@@ -1403,14 +1510,17 @@ class LoginDialog(QDialog):
             QTimer.singleShot(500, self.accept)  # Brief success message before closing
         except Exception as e:
             friendly_error = get_user_friendly_error(e, base_url)
-            
+
             # Special handling for Render cold starts
-            if 'render' in base_url.lower() and 'starting up' in friendly_error:
+            if "render" in base_url.lower() and "starting up" in friendly_error:
                 self.status_label.setText(friendly_error)
                 # Retry after a delay for Render cold starts
-                QTimer.singleShot(3000, lambda: self._retry_login_after_wakeup(email, password, base_url))
+                QTimer.singleShot(
+                    3000,
+                    lambda: self._retry_login_after_wakeup(email, password, base_url),
+                )
                 return
-            
+
             self.status_label.setText(friendly_error)
             self.login_btn.setEnabled(True)
 
@@ -1427,10 +1537,12 @@ class LoginDialog(QDialog):
             QTimer.singleShot(500, self.accept)
         except Exception as e:
             friendly_error = get_user_friendly_error(e, base_url)
-            if 'invalid credentials' in friendly_error.lower():
+            if "invalid credentials" in friendly_error.lower():
                 self.status_label.setText("Invalid email or password")
             else:
-                self.status_label.setText("Server still starting up. Please wait a moment and try again.")
+                self.status_label.setText(
+                    "Server still starting up. Please wait a moment and try again."
+                )
             self.login_btn.setEnabled(True)
 
     # def _on_google(self):
@@ -1465,12 +1577,12 @@ class LoginDialog(QDialog):
         try:
             settings_path = Path("desktop_settings.json")
             if settings_path.exists():
-                with open(settings_path, 'r') as f:
+                with open(settings_path, "r") as f:
                     data = json.load(f)
-                    return data.get('theme', 'light')
+                    return data.get("theme", "light")
         except Exception:
             pass
-        return 'light'
+        return "light"
 
 
 ## AdvancedSettingsDialog removed
@@ -1561,21 +1673,21 @@ class SignupDialog(QDialog):
 
     def _send(self):
         email = self.email_input.text().strip()
-        base_url = (self._base_url or '').strip().rstrip('/')
+        base_url = (self._base_url or "").strip().rstrip("/")
         if not email or not base_url:
             self.status_label.setText("Enter email and server URL")
             return
         try:
             api = ApiClient(base_url)
             res = api.send_otp(email)
-            debug_code = res.get('debug_code')
+            debug_code = res.get("debug_code")
             if debug_code:
                 self.status_label.setText(f"OTP sent (dev mode). Code: {debug_code}")
             else:
                 self.status_label.setText("OTP sent to your email")
         except Exception as e:
             friendly_error = get_user_friendly_error(e, base_url)
-            if 'already registered' in friendly_error:
+            if "already registered" in friendly_error:
                 self.status_label.setText(friendly_error)
             else:
                 self.status_label.setText(f"Failed to send OTP: {friendly_error}")
@@ -1583,7 +1695,7 @@ class SignupDialog(QDialog):
     def _verify(self):
         email = self.email_input.text().strip()
         code = self.otp_input.text().strip()
-        base_url = (self._base_url or '').strip().rstrip('/')
+        base_url = (self._base_url or "").strip().rstrip("/")
         if not email or not code or not base_url:
             self.status_label.setText("Enter email, OTP, and server URL")
             return
@@ -1598,6 +1710,7 @@ class SignupDialog(QDialog):
                     self.status_label.setText("Passwords do not match")
                     return
             import requests
+
             api_body_pwd = pw if pw and pw == pw2 and len(pw) >= 8 else None
             resp = requests.post(
                 f"{base_url}/v1/auth/verify-otp",
@@ -1630,7 +1743,7 @@ class SignupDialog(QDialog):
 
     # --- Theming helpers (Signup) ---
     def _apply_custom_style(self):
-        if self._theme == 'dark':
+        if self._theme == "dark":
             style = """
             QDialog { background:#0f1114; }
             QLabel { color:#d0d4d8; }
@@ -1658,12 +1771,12 @@ class SignupDialog(QDialog):
         try:
             settings_path = Path("desktop_settings.json")
             if settings_path.exists():
-                with open(settings_path, 'r') as f:
+                with open(settings_path, "r") as f:
                     data = json.load(f)
-                    return data.get('theme', 'light')
+                    return data.get("theme", "light")
         except Exception:
             pass
-        return 'light'
+        return "light"
 
     def get_result(self):
         return self._base_url, self._token, self._user
@@ -1741,14 +1854,14 @@ class ForgotPasswordDialog(QDialog):
 
     def _send_code(self):
         email = self.email_input.text().strip()
-        base_url = (self._base_url or '').strip().rstrip('/')
+        base_url = (self._base_url or "").strip().rstrip("/")
         if not email or not base_url:
             self.status_label.setText("Enter email and server URL")
             return
         try:
             api = ApiClient(base_url)
             res = api.request_password_reset(email)
-            dbg = res.get('debug_code')
+            dbg = res.get("debug_code")
             if dbg:
                 self.status_label.setText(f"Code sent (dev={dbg})")
             else:
@@ -1763,7 +1876,7 @@ class ForgotPasswordDialog(QDialog):
         code = self.code_input.text().strip()
         pw = self.new_pass_input.text().strip()
         pw2 = self.new_pass_confirm.text().strip()
-        base_url = (self._base_url or '').strip().rstrip('/')
+        base_url = (self._base_url or "").strip().rstrip("/")
         if not self._email or not code or not pw:
             self.status_label.setText("Fill all fields")
             return
@@ -1783,7 +1896,7 @@ class ForgotPasswordDialog(QDialog):
 
     # --- Theming helpers (Forgot Password) ---
     def _apply_custom_style(self):
-        if self._theme == 'dark':
+        if self._theme == "dark":
             style = """
             QDialog { background:#0f1114; }
             QLabel { color:#d0d4d8; }
@@ -1811,33 +1924,33 @@ class ForgotPasswordDialog(QDialog):
         try:
             settings_path = Path("desktop_settings.json")
             if settings_path.exists():
-                with open(settings_path, 'r') as f:
+                with open(settings_path, "r") as f:
                     data = json.load(f)
-                    return data.get('theme', 'light')
+                    return data.get("theme", "light")
         except Exception:
             pass
-        return 'light'
+        return "light"
 
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Wellness at Work")
     app.setApplicationVersion(CONFIG.app_version)
-    
+
     # Fix for Windows taskbar icon
     try:
         import ctypes
         from ctypes import wintypes
-        
+
         # Tell Windows this is a distinct app (not python.exe)
-        myappid = 'wellness.at.work.eyetracker.1.0'
+        myappid = "wellness.at.work.eyetracker.1.0"
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        
+
         # Additional Windows taskbar fixes
-        if hasattr(ctypes.windll, 'shell32'):
+        if hasattr(ctypes.windll, "shell32"):
             # Force taskbar to refresh
             ctypes.windll.user32.SetProcessDPIAware()
-            
+
             # Set process name to help with taskbar grouping
             try:
                 # Set process description
@@ -1845,11 +1958,16 @@ def main():
                 kernel32.SetConsoleTitleW = kernel32.SetConsoleTitleW
                 kernel32.SetConsoleTitleW.argtypes = [ctypes.c_wchar_p]
                 kernel32.SetConsoleTitleW("Wellness at Work")
-                
+
                 # Force taskbar refresh using Shell API
                 shell32 = ctypes.windll.shell32
                 SHChangeNotify = shell32.SHChangeNotifyW
-                SHChangeNotify.argtypes = [wintypes.LONG, wintypes.UINT, ctypes.c_void_p, ctypes.c_void_p]
+                SHChangeNotify.argtypes = [
+                    wintypes.LONG,
+                    wintypes.UINT,
+                    ctypes.c_void_p,
+                    ctypes.c_void_p,
+                ]
                 SHCNE_ASSOCCHANGED = 0x08000000
                 SHCNF_IDLIST = 0x0000
                 SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
@@ -1857,37 +1975,37 @@ def main():
                 pass
     except Exception:
         pass
-    
+
     # Set application icon
     app_icon = None
     try:
         # For packaged executable, assets are bundled differently
-        is_frozen = getattr(sys, 'frozen', False)
-        
+        is_frozen = getattr(sys, "frozen", False)
+
         if is_frozen:
             # Running as packaged executable
             # For directory builds, use executable location; for single-file builds, use _MEIPASS
-            if hasattr(sys, '_MEIPASS'):
+            if hasattr(sys, "_MEIPASS"):
                 # Single-file build (--onefile)
                 base_path = Path(sys._MEIPASS)
             else:
                 # Directory build (default)
-                base_path = Path(sys.executable).parent / '_internal'
+                base_path = Path(sys.executable).parent / "_internal"
             icon_candidates = [
-                base_path / 'assets' / 'app.ico',
-                base_path / 'assets' / 'favicon.ico', 
-                base_path / 'assets' / 'android-chrome-192x192.png',
-                base_path / 'app.ico',  # PyInstaller sometimes puts it in root
-                base_path / 'favicon.ico',
+                base_path / "assets" / "app.ico",
+                base_path / "assets" / "favicon.ico",
+                base_path / "assets" / "android-chrome-192x192.png",
+                base_path / "app.ico",  # PyInstaller sometimes puts it in root
+                base_path / "favicon.ico",
             ]
         else:
             # Running in development
             icon_candidates = [
-                project_root / 'assets' / 'app.ico',
-                project_root / 'assets' / 'favicon.ico', 
-                project_root / 'assets' / 'android-chrome-192x192.png',
+                project_root / "assets" / "app.ico",
+                project_root / "assets" / "favicon.ico",
+                project_root / "assets" / "android-chrome-192x192.png",
             ]
-        
+
         for candidate in icon_candidates:
             if candidate.exists():
                 app_icon = QIcon(str(candidate))
@@ -1913,10 +2031,10 @@ def main():
 
     if not initial_auth:
         login = LoginDialog(default_base_url=CONFIG.api_base_url)
-        
+
         # Ensure login dialog comes to front
         force_window_to_front(login)
-            
+
         if login.exec() != QDialog.DialogCode.Accepted:
             sys.exit(0)
         base_url, token, user = login.get_result()
@@ -1927,16 +2045,16 @@ def main():
         initial_auth = (base_url, token, user)
 
     window = WaWMainWindow(initial_auth=initial_auth)
-    
+
     # Ensure taskbar icon is set
     if app_icon:
         window.setWindowIcon(app_icon)
-    
+
     window.show()
-    
+
     # Ensure window comes to front and gets focus
     force_window_to_front(window)
-    
+
     # Force taskbar icon update after window is shown
     def update_taskbar_icon():
         try:
@@ -1944,73 +2062,92 @@ def main():
                 # Multiple attempts to set the icon
                 window.setWindowIcon(app_icon)
                 app.setWindowIcon(app_icon)
-                
+
                 # Try to force Windows taskbar refresh
                 import ctypes
                 import ctypes.wintypes
                 from ctypes import wintypes
+
                 hwnd = int(window.winId())
-                
+
                 # Constants for icon messages
                 WM_SETICON = 0x0080
                 ICON_SMALL = 0
                 ICON_BIG = 1
-                
+
                 # Additional constants for taskbar manipulation
                 WM_COMMAND = 0x0111
                 TB_REFRESH = 0x0418
-                
+
                 # Get the actual executable icon and force set it
                 try:
                     # Try to extract icon from the current executable
-                    hicon_large = ctypes.windll.shell32.ExtractIconW(0, sys.executable, 0)
-                    hicon_small = ctypes.windll.shell32.ExtractIconW(0, sys.executable, 0)
-                    
+                    hicon_large = ctypes.windll.shell32.ExtractIconW(
+                        0, sys.executable, 0
+                    )
+                    hicon_small = ctypes.windll.shell32.ExtractIconW(
+                        0, sys.executable, 0
+                    )
+
                     if hicon_large and hicon_large > 1:  # Valid icon handle
-                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_large)
+                        ctypes.windll.user32.SendMessageW(
+                            hwnd, WM_SETICON, ICON_BIG, hicon_large
+                        )
                     if hicon_small and hicon_small > 1:  # Valid icon handle
-                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
-                        
+                        ctypes.windll.user32.SendMessageW(
+                            hwnd, WM_SETICON, ICON_SMALL, hicon_small
+                        )
+
                     # Force taskbar to update its icon cache
                     try:
                         # Find the taskbar window
-                        taskbar_hwnd = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+                        taskbar_hwnd = ctypes.windll.user32.FindWindowW(
+                            "Shell_TrayWnd", None
+                        )
                         if taskbar_hwnd:
                             # Try to refresh the taskbar
-                            ctypes.windll.user32.PostMessageW(taskbar_hwnd, WM_COMMAND, TB_REFRESH, 0)
-                            
+                            ctypes.windll.user32.PostMessageW(
+                                taskbar_hwnd, WM_COMMAND, TB_REFRESH, 0
+                            )
+
                         # Also try to update the window's class icon
-                        ctypes.windll.user32.SetClassLongPtrW(hwnd, -14, hicon_large)  # GCL_HICON
-                        ctypes.windll.user32.SetClassLongPtrW(hwnd, -34, hicon_small)  # GCL_HICONSM
-                        
+                        ctypes.windll.user32.SetClassLongPtrW(
+                            hwnd, -14, hicon_large
+                        )  # GCL_HICON
+                        ctypes.windll.user32.SetClassLongPtrW(
+                            hwnd, -34, hicon_small
+                        )  # GCL_HICONSM
+
                         # Force window redraw
-                        ctypes.windll.user32.RedrawWindow(hwnd, None, None, 0x0001 | 0x0004)  # RDW_INVALIDATE | RDW_UPDATENOW
+                        ctypes.windll.user32.RedrawWindow(
+                            hwnd, None, None, 0x0001 | 0x0004
+                        )  # RDW_INVALIDATE | RDW_UPDATENOW
                     except:
                         pass
                 except:
                     pass
-                
+
                 # Fallback: Try to load and set icon via Windows API
-                is_frozen = getattr(sys, 'frozen', False)
-                
+                is_frozen = getattr(sys, "frozen", False)
+
                 if is_frozen:
                     # Running as packaged executable
                     # For directory builds, use executable location; for single-file builds, use _MEIPASS
-                    if hasattr(sys, '_MEIPASS'):
+                    if hasattr(sys, "_MEIPASS"):
                         # Single-file build (--onefile)
                         base_path = Path(sys._MEIPASS)
                     else:
                         # Directory build (default)
-                        base_path = Path(sys.executable).parent / '_internal'
+                        base_path = Path(sys.executable).parent / "_internal"
                     icon_candidates = [
-                        base_path / 'assets' / 'app.ico',
-                        base_path / 'app.ico',
-                        base_path / 'assets' / 'favicon.ico',
+                        base_path / "assets" / "app.ico",
+                        base_path / "app.ico",
+                        base_path / "assets" / "favicon.ico",
                     ]
                 else:
                     # Running in development
-                    icon_candidates = [project_root / 'assets' / 'app.ico']
-                
+                    icon_candidates = [project_root / "assets" / "app.ico"]
+
                 for icon_candidate in icon_candidates:
                     icon_path = str(icon_candidate)
                     if Path(icon_path).exists():
@@ -2021,43 +2158,57 @@ def main():
                             )
                             if hicon:
                                 # Set both small and large icons
-                                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+                                ctypes.windll.user32.SendMessageW(
+                                    hwnd, WM_SETICON, ICON_SMALL, hicon
+                                )
                                 # Try to set class icon too
-                                ctypes.windll.user32.SetClassLongPtrW(hwnd, -34, hicon)  # GCL_HICONSM
-                                
+                                ctypes.windll.user32.SetClassLongPtrW(
+                                    hwnd, -34, hicon
+                                )  # GCL_HICONSM
+
                             # Load large icon
                             hicon_large = ctypes.windll.user32.LoadImageW(
                                 0, icon_path, 1, 48, 48, 0x00000010 | 0x00008000
                             )
                             if hicon_large:
-                                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_large)
+                                ctypes.windll.user32.SendMessageW(
+                                    hwnd, WM_SETICON, ICON_BIG, hicon_large
+                                )
                                 # Try to set class icon too
-                                ctypes.windll.user32.SetClassLongPtrW(hwnd, -14, hicon_large)  # GCL_HICON
-                                
+                                ctypes.windll.user32.SetClassLongPtrW(
+                                    hwnd, -14, hicon_large
+                                )  # GCL_HICON
+
                             # Force taskbar refresh after setting icons
                             try:
-                                taskbar_hwnd = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+                                taskbar_hwnd = ctypes.windll.user32.FindWindowW(
+                                    "Shell_TrayWnd", None
+                                )
                                 if taskbar_hwnd:
-                                    ctypes.windll.user32.PostMessageW(taskbar_hwnd, WM_COMMAND, TB_REFRESH, 0)
+                                    ctypes.windll.user32.PostMessageW(
+                                        taskbar_hwnd, WM_COMMAND, TB_REFRESH, 0
+                                    )
                             except:
                                 pass
                         except:
                             pass
                         break
-                        
+
         except Exception:
             pass  # Fail silently in production
-    
+
     # Update icon after multiple delays to ensure window is fully initialized
     # Sometimes the taskbar needs several attempts to register the icon
     QTimer.singleShot(500, update_taskbar_icon)
     QTimer.singleShot(1500, update_taskbar_icon)  # Second attempt
     QTimer.singleShot(3000, update_taskbar_icon)  # Third attempt
-    
+
     sys.exit(app.exec())
+
 
 # --- Auth persistence helpers ---
 AUTH_FILE = Path("desktop_auth.json")
+
 
 def save_auth(base_url: str, token: str, user: dict):
     data = {
@@ -2066,18 +2217,20 @@ def save_auth(base_url: str, token: str, user: dict):
         "user": user,
         "saved_at": datetime.utcnow().isoformat() + "Z",
     }
-    with open(AUTH_FILE, 'w') as f:
+    with open(AUTH_FILE, "w") as f:
         json.dump(data, f)
+
 
 def load_saved_auth():
     if AUTH_FILE.exists():
         try:
-            with open(AUTH_FILE, 'r') as f:
+            with open(AUTH_FILE, "r") as f:
                 data = json.load(f)
             return data.get("base_url"), data.get("token"), data.get("user") or {}
         except Exception:
             return None
     return None
+
 
 def delete_saved_auth():
     try:
@@ -2085,6 +2238,7 @@ def delete_saved_auth():
             AUTH_FILE.unlink()
     except Exception:
         pass
+
 
 if __name__ == "__main__":
     main()

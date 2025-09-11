@@ -1,9 +1,10 @@
 """Minimal API client for WaW backend (login + batch upload)."""
 from __future__ import annotations
 
-import requests
-from typing import Dict, List, Optional
 from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+import requests
 
 
 @dataclass
@@ -40,18 +41,30 @@ class ApiClient:
         # Only alter host portion
         try:
             from urllib.parse import urlparse, urlunparse
+
             parts = urlparse(url)
             host = parts.hostname or ""
-            fixed_host = host.replace("127v0.0.1", "127.0.0.1").replace("127..0.1", "127.0.0.1")
+            fixed_host = host.replace("127v0.0.1", "127.0.0.1").replace(
+                "127..0.1", "127.0.0.1"
+            )
             if fixed_host != host:
                 # Rebuild netloc (preserve port if any)
                 netloc = fixed_host
                 if parts.port:
                     netloc = f"{fixed_host}:{parts.port}"
-                url = urlunparse((parts.scheme, netloc, parts.path, parts.params, parts.query, parts.fragment))
+                url = urlunparse(
+                    (
+                        parts.scheme,
+                        netloc,
+                        parts.path,
+                        parts.params,
+                        parts.query,
+                        parts.fragment,
+                    )
+                )
         except Exception:
             pass  # best-effort normalization
-        return url.rstrip('/')
+        return url.rstrip("/")
 
     @property
     def is_authed(self) -> bool:
@@ -81,7 +94,7 @@ class ApiClient:
         data = resp.json()
         token = data["access_token"]
         self._token = token
-        return LoginResult(access_token=token, user=data["user"])        
+        return LoginResult(access_token=token, user=data["user"])
 
     def google_login(self, id_token: str) -> LoginResult:
         resp = requests.post(
@@ -98,12 +111,14 @@ class ApiClient:
             except Exception:
                 pass
             if detail:
-                raise requests.HTTPError(f"{resp.status_code} Google auth failed: {detail}", response=resp)
+                raise requests.HTTPError(
+                    f"{resp.status_code} Google auth failed: {detail}", response=resp
+                )
         resp.raise_for_status()
         data = resp.json()
         token = data["access_token"]
         self._token = token
-        return LoginResult(access_token=token, user=data["user"]) 
+        return LoginResult(access_token=token, user=data["user"])
 
     def send_otp(self, email: str) -> Dict:
         resp = requests.post(
@@ -200,25 +215,33 @@ class ApiClient:
                 self._token = None
                 detail = None
                 try:
-                    if resp.headers.get('content-type','').startswith('application/json'):
+                    if resp.headers.get("content-type", "").startswith(
+                        "application/json"
+                    ):
                         data = resp.json()
                         if isinstance(data, dict):
-                            detail = data.get('detail')
+                            detail = data.get("detail")
                 except Exception:
                     pass
-                self._last_token_error = f"unauthorized: {detail}" if detail else "unauthorized"
+                self._last_token_error = (
+                    f"unauthorized: {detail}" if detail else "unauthorized"
+                )
                 return False
             if resp.status_code >= 500:
                 # Server side failure; keep token (likely transient) but record reason
                 detail = None
                 try:
-                    if resp.headers.get('content-type','').startswith('application/json'):
+                    if resp.headers.get("content-type", "").startswith(
+                        "application/json"
+                    ):
                         data = resp.json()
                         if isinstance(data, dict):
-                            detail = data.get('detail')
+                            detail = data.get("detail")
                 except Exception:
                     pass
-                self._last_token_error = f"server_error:{resp.status_code}" + (f" {detail}" if detail else "")
+                self._last_token_error = f"server_error:{resp.status_code}" + (
+                    f" {detail}" if detail else ""
+                )
                 return False
             resp.raise_for_status()
             return True
