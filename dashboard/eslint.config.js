@@ -1,11 +1,4 @@
-// Minimal ESLint v9 flat config to enable linting in CI without extra rules
-// This satisfies ESLint's required config and ignores build/artifact folders.
-
-export default [
-  {
-    files: ["**/*.{js,jsx}"],
-    ignores: [".next/**", "node_modules/**", "dist/**"],
-  },
-];
+// This file is kept empty; the real config is in eslint.config.mjs (ESM)
+// Left in place temporarily to avoid confusion.
 
 
