@@ -16,19 +16,18 @@ A comprehensive **cloud-synced eye blink tracker** designed to monitor digital w
 - Run directly - all dependencies included
 
 **macOS Users:**
-- Clone repository: `git clone https://github.com/your-username/blink-tracker.git`
+- Clone repository: `git clone https://github.com/nalotiavaibhav/blink-tracker.git`
 - Extract: `unzip macos_build_package.zip && cd macos_build_package`
 - Build: `./build_macos_app.sh` (requires Mac with Homebrew)
 
 **Try Live Demo:**
-- 🌐 Web Dashboard: https://waw-dashboard.onrender.com
-- 🔐 Demo Login: `local@example.com` / `demo`
+- 🌐 **Admin Dashboard**: https://waw-dashboard.onrender.com (admin access only)
 
 ### **👨‍💻 For Developers**
 
 ```bash
 # Clone repository
-git clone https://github.com/your-username/blink-tracker.git
+git clone https://github.com/nalotiavaibhav/blink-tracker.git
 cd blink-tracker
 
 # Install dependencies
@@ -116,7 +115,7 @@ A comprehensive **cloud-synced eye blink tracker** designed to monitor digital w
 
 ### **📂 Repository Information**
 
-- **Repository URL**: `https://github.com/your-username/blink-tracker` 
+- **Repository URL**: `https://github.com/nalotiavaibhav/blink-tracker` 
 - **License**: MIT License
 - **Primary Branch**: `main`
 - **Language**: Python 3.10+, TypeScript, Shell
@@ -139,7 +138,7 @@ xcode-select --install
 ```bash
 # Clone to your preferred directory
 cd ~/Developer  # or your preferred code directory
-git clone https://github.com/your-username/blink-tracker.git
+git clone https://github.com/nalotiavaibhav/blink-tracker.git
 cd blink-tracker
 
 # Verify the clone
@@ -217,7 +216,7 @@ brew install python@3.11 create-dmg git
 pip3 install pyinstaller pillow
 
 # Clone and build
-git clone https://github.com/your-username/blink-tracker.git
+git clone https://github.com/nalotiavaibhav/blink-tracker.git
 cd blink-tracker
 unzip macos_build_package.zip
 cd macos_build_package
@@ -608,7 +607,7 @@ Build the desktop application for macOS on a physical Mac machine using the comp
 
 **1. Clone the Repository**
 ```bash
-git clone https://github.com/your-username/blink-tracker.git
+git clone https://github.com/nalotiavaibhav/blink-tracker.git
 cd blink-tracker
 ```
 
@@ -685,7 +684,7 @@ If you prefer to build from the main repository instead of the pre-built package
 
 ```bash
 # Clone and setup
-git clone https://github.com/your-username/blink-tracker.git
+git clone https://github.com/nalotiavaibhav/blink-tracker.git
 cd blink-tracker
 
 # Install dependencies
@@ -725,9 +724,8 @@ chmod +x build_macos_app.sh
 - 📚 **API Docs**: <http://localhost:8000/docs>
 
 **Production Demo:**
-- 🌐 **Live Web Dashboard**: <https://waw-dashboard.onrender.com>
+- 🌐 **Admin Dashboard**: <https://waw-dashboard.onrender.com> (admin access only)
 - 📚 **Live API Docs**: <https://waw-backend-a28q.onrender.com/docs>
-- 🔐 **Demo Login**: `local@example.com` / `demo`
 
 **Backend Configuration:**
 - **Production API**: `https://waw-backend-a28q.onrender.com`
@@ -941,7 +939,7 @@ This repository represents a **complete, professional-grade** software project:
 
 ```bash
 # Clone and build on macOS
-git clone https://github.com/your-username/blink-tracker.git
+git clone https://github.com/nalotiavaibhav/blink-tracker.git
 cd blink-tracker && unzip macos_build_package.zip && cd macos_build_package
 brew install python@3.11 create-dmg && pip3 install pyinstaller pillow
 chmod +x build_macos_app.sh && ./build_macos_app.sh
