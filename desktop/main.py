@@ -40,6 +40,48 @@ from shared.api import ApiClient
 # from shared.google_oauth import get_google_id_token_interactive  # (Temporarily disabled) Google sign-in currently not functioning; UI removed.
 
 
+def set_app_icon(widget):
+    """Set the application icon for a QWidget (window or dialog)."""
+    try:
+        icon_candidates = [
+            project_root / 'assets' / 'app.ico',
+            project_root / 'assets' / 'favicon.ico', 
+            project_root / 'assets' / 'android-chrome-192x192.png',
+        ]
+        for candidate in icon_candidates:
+            if candidate.exists():
+                widget.setWindowIcon(QIcon(str(candidate)))
+                break
+    except Exception:
+        pass
+
+
+def get_user_friendly_error(exception, base_url=""):
+    """Convert technical API errors into user-friendly messages."""
+    error_msg = str(exception).lower()
+    
+    # Handle common connection errors
+    if any(phrase in error_msg for phrase in ['connection', 'refused', 'timeout', 'unreachable', 'port']):
+        if 'render' in base_url.lower():
+            return "Server is starting up (may take 30-60 seconds)..."
+        else:
+            return "Cannot connect to server. Please check your internet connection."
+    elif 'unauthorized' in error_msg or 'invalid' in error_msg or '401' in error_msg:
+        return "Invalid credentials"
+    elif '404' in error_msg:
+        return "Server not found. Please check the server URL."
+    elif '500' in error_msg or 'internal' in error_msg:
+        return "Server error. Please try again later."
+    elif 'timeout' in error_msg:
+        return "Server took too long to respond. Please try again."
+    elif '409' in error_msg or 'conflict' in error_msg:
+        return "Email already registered. Please login instead."
+    elif '422' in error_msg or 'validation' in error_msg:
+        return "Invalid data provided. Please check your inputs."
+    else:
+        return "Operation failed. Please try again."
+
+
 class PerformanceMonitor(QThread):
     """Thread to monitor blink-tracker application performance metrics."""
     performance_updated = pyqtSignal(dict)
@@ -159,17 +201,15 @@ class WaWMainWindow(QMainWindow):
         self.setWindowTitle("Wellness at Work - Eye Tracker")
         self.resize(880, 620)
 
-        # Icon (best effort)
+        # Set application icon
+        set_app_icon(self)
+        
+        # Additional Windows taskbar icon setup
         try:
-            icon_candidates = [
-                project_root / 'assets' / 'app.ico',
-                project_root / 'assets' / 'favicon.ico',
-                project_root / 'assets' / 'android-chrome-192x192.png',
-            ]
-            for c in icon_candidates:
-                if c.exists():
-                    self.setWindowIcon(QIcon(str(c)))
-                    break
+            import ctypes
+            # Force taskbar icon refresh by setting window attributes
+            hwnd = int(self.winId())
+            ctypes.windll.user32.SetWindowTextW(hwnd, "Wellness at Work - Eye Tracker")
         except Exception:
             pass
 
@@ -1056,19 +1096,8 @@ class LoginDialog(QDialog):
         self.setMinimumWidth(340)
         self._theme = (theme or self._load_theme_preference()).lower()
 
-        # Icon (best effort)
-        try:
-            icon_candidates = [
-                project_root / 'assets' / 'app.ico',
-                project_root / 'assets' / 'favicon.ico',
-                project_root / 'assets' / 'android-chrome-192x192.png',
-            ]
-            for c in icon_candidates:
-                if c.exists():
-                    self.setWindowIcon(QIcon(str(c)))
-                    break
-        except Exception:
-            pass
+        # Set application icon
+        set_app_icon(self)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 26, 32, 24)
@@ -1161,16 +1190,46 @@ class LoginDialog(QDialog):
             self.status_label.setText("All fields are required")
             return
         self.login_btn.setEnabled(False)
-        self.status_label.setText("Signing in…")
+        self.status_label.setText("Connecting to server...")
+        
         try:
             api = ApiClient(base_url)
             result = api.login(email=email, password=password)
             self._token = result.access_token
             self._user = result.user
             self._base_url = base_url
-            self.accept()
+            self.status_label.setText("Login successful!")
+            QTimer.singleShot(500, self.accept)  # Brief success message before closing
         except Exception as e:
-            self.status_label.setText(f"Login failed: {e}")
+            friendly_error = get_user_friendly_error(e, base_url)
+            
+            # Special handling for Render cold starts
+            if 'render' in base_url.lower() and 'starting up' in friendly_error:
+                self.status_label.setText(friendly_error)
+                # Retry after a delay for Render cold starts
+                QTimer.singleShot(3000, lambda: self._retry_login_after_wakeup(email, password, base_url))
+                return
+            
+            self.status_label.setText(friendly_error)
+            self.login_btn.setEnabled(True)
+
+    def _retry_login_after_wakeup(self, email: str, password: str, base_url: str):
+        """Retry login after server wake-up delay for Render cold starts."""
+        self.status_label.setText("Retrying login...")
+        try:
+            api = ApiClient(base_url)
+            result = api.login(email=email, password=password)
+            self._token = result.access_token
+            self._user = result.user
+            self._base_url = base_url
+            self.status_label.setText("Login successful!")
+            QTimer.singleShot(500, self.accept)
+        except Exception as e:
+            friendly_error = get_user_friendly_error(e, base_url)
+            if 'invalid credentials' in friendly_error.lower():
+                self.status_label.setText("Invalid email or password")
+            else:
+                self.status_label.setText("Server still starting up. Please wait a moment and try again.")
             self.login_btn.setEnabled(True)
 
     # def _on_google(self):
@@ -1226,6 +1285,9 @@ class SignupDialog(QDialog):
         self.setMinimumWidth(380)
         # Theme
         self._theme = self._load_theme_preference().lower()
+
+        # Set application icon
+        set_app_icon(self)
 
         layout = QFormLayout(self)
         layout.setContentsMargins(20, 18, 20, 14)
@@ -1311,11 +1373,11 @@ class SignupDialog(QDialog):
             else:
                 self.status_label.setText("OTP sent to your email")
         except Exception as e:
-            msg = str(e)
-            if '409' in msg or 'Conflict' in msg:
-                self.status_label.setText("Email already registered. Please login.")
+            friendly_error = get_user_friendly_error(e, base_url)
+            if 'already registered' in friendly_error:
+                self.status_label.setText(friendly_error)
             else:
-                self.status_label.setText(f"Failed to send OTP: {e}")
+                self.status_label.setText(f"Failed to send OTP: {friendly_error}")
 
     def _verify(self):
         email = self.email_input.text().strip()
@@ -1362,7 +1424,8 @@ class SignupDialog(QDialog):
             self._user = data_final["user"]
             self.accept()
         except Exception as e:
-            self.status_label.setText(f"Verification failed: {e}")
+            friendly_error = get_user_friendly_error(e, base_url)
+            self.status_label.setText(f"Verification failed: {friendly_error}")
 
     # --- Theming helpers (Signup) ---
     def _apply_custom_style(self):
@@ -1413,6 +1476,9 @@ class ForgotPasswordDialog(QDialog):
         self._email = None
         self.setMinimumWidth(360)
         self._theme = self._load_theme_preference().lower()
+
+        # Set application icon
+        set_app_icon(self)
 
         layout = QFormLayout(self)
         layout.setContentsMargins(20, 18, 20, 14)
@@ -1556,6 +1622,37 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Wellness at Work")
     app.setApplicationVersion(CONFIG.app_version)
+    
+    # Fix for Windows taskbar icon
+    try:
+        import ctypes
+        from ctypes import wintypes
+        # Tell Windows this is a distinct app (not python.exe)
+        myappid = 'wellness.at.work.eyetracker.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        
+        # Additional Windows taskbar fixes
+        if hasattr(ctypes.windll, 'shell32'):
+            # Force taskbar to refresh
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+    
+    # Set application icon
+    app_icon = None
+    try:
+        icon_candidates = [
+            project_root / 'assets' / 'app.ico',
+            project_root / 'assets' / 'favicon.ico', 
+            project_root / 'assets' / 'android-chrome-192x192.png',
+        ]
+        for candidate in icon_candidates:
+            if candidate.exists():
+                app_icon = QIcon(str(candidate))
+                app.setWindowIcon(app_icon)
+                break
+    except Exception:
+        pass
 
     # Attempt saved auth first
     initial_auth = None
@@ -1584,7 +1681,49 @@ def main():
         initial_auth = (base_url, token, user)
 
     window = WaWMainWindow(initial_auth=initial_auth)
+    
+    # Ensure taskbar icon is set
+    if app_icon:
+        window.setWindowIcon(app_icon)
+    
     window.show()
+    
+    # Force taskbar icon update after window is shown
+    def update_taskbar_icon():
+        try:
+            if app_icon:
+                # Multiple attempts to set the icon
+                window.setWindowIcon(app_icon)
+                app.setWindowIcon(app_icon)
+                
+                # Try to force Windows taskbar refresh
+                import ctypes
+                import ctypes.wintypes
+                hwnd = int(window.winId())
+                
+                # Constants for icon messages
+                WM_SETICON = 0x0080
+                ICON_SMALL = 0
+                ICON_BIG = 1
+                
+                # Try to load and set icon via Windows API
+                icon_path = str(project_root / 'assets' / 'app.ico')
+                if Path(icon_path).exists():
+                    # Load icon using Windows API
+                    hicon = ctypes.windll.user32.LoadImageW(
+                        0, icon_path, 1, 0, 0, 0x00000010 | 0x00008000
+                    )
+                    if hicon:
+                        # Set both small and large icons
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+                        
+        except Exception as e:
+            print(f"Icon update error: {e}")  # Debug info
+    
+    # Update icon after a brief delay to ensure window is fully initialized
+    QTimer.singleShot(500, update_taskbar_icon)
+    
     sys.exit(app.exec())
 
 # --- Auth persistence helpers ---

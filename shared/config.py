@@ -42,7 +42,7 @@ class AppConfig:
         os.getenv("API_BASE_URL")
         or _FILE_CFG.get("apiBase")
         or _FILE_CFG.get("API_BASE_URL")
-        or "http://localhost:8000"
+        or "https://waw-backend-a28q.onrender.com"  # Production default
     )
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", _FILE_CFG.get("googleClientId", ""))
     google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", _FILE_CFG.get("googleClientSecret", ""))
