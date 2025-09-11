@@ -8,6 +8,9 @@ google-auth==2.34.0
 google-auth-oauthlib==1.2.1
 psycopg2-binary==2.9.10
 passlib[bcrypt]==1.7.4
+# Authentication
+bcrypt>=4.0.0
+PyJWT>=2.8.0
 # Email support (optional)
 # smtplib is built-in, but for advanced email features:
 # sendgrid==6.10.0
