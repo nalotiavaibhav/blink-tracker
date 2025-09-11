@@ -18,7 +18,7 @@ The architecture diagram in both `README.md` and `docs/architecture-diagram.md` 
 
 ### **🗄️ Data Layer**
 - Database (SQLite → PostgreSQL transition)
-- Optional Cloud Storage (AWS S3)
+- Cloud Database (AWS RDS PostgreSQL)
 
 ### **🏗️ Infrastructure Layer**
 - Render.com for production hosting

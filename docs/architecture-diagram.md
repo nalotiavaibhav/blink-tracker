@@ -62,8 +62,8 @@ graph TB
             TBL4[📋 Tracking Sessions Table]
         end
         
-        subgraph "☁️ Cloud Storage (Optional)"
-            S3[📁 AWS S3<br/>Backups & Logs]
+        subgraph "☁️ Cloud Database"
+            RDS[📁 AWS RDS PostgreSQL<br/>Production Database]
         end
     end
 
@@ -127,8 +127,8 @@ graph TB
     DB --> TBL4
 
     %% Cloud Integration
-    BATCH -.-> S3
-    AUDIT -.-> S3
+    BATCH -.-> RDS
+    AUDIT -.-> RDS
 
     %% Development & Deployment
     GH --> CI
@@ -152,7 +152,7 @@ graph TB
     class U1,U2,U3 userClass
     class DA,ET,PM,LS,UI,WD,WC,WL,WU appClass
     class API,AUTH,VALID,BL,SYNC,AGG,BATCH backendClass
-    class DB,TBL1,TBL2,TBL3,TBL4,S3 dataClass
+    class DB,TBL1,TBL2,TBL3,TBL4,RDS dataClass
     class RENDER,CDN,GH,CI,BUILD infraClass
     class GDPR,ENC,AUDIT,HTTPS,JWT,CORS securityClass
 ```
@@ -179,7 +179,7 @@ graph TB
 ### 🗄️ **Data Layer**
 - **Primary Database**: SQLite (development) / PostgreSQL (production)
 - **Schema**: Users, Blink Samples, Sessions, Tracking Sessions
-- **Cloud Storage**: AWS S3 for backups and audit logs
+- **Cloud Database**: AWS RDS PostgreSQL for production data storage
 
 ### 🛡️ **Security & Compliance**
 - **GDPR Compliance**: Privacy-first data handling

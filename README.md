@@ -480,7 +480,7 @@ graph TB
     %% Data Layer
     subgraph "🗄️ Data Layer"
         DB[(🗃️ Database<br/>SQLite → PostgreSQL)]
-        CLOUD[☁️ Cloud Storage<br/>AWS S3 (Optional)]
+        CLOUD[☁️ Cloud Database<br/>AWS RDS PostgreSQL]
     end
 
     %% Infrastructure
@@ -526,7 +526,7 @@ graph TB
 | **Backend** | REST API | FastAPI + SQLAlchemy | Secure data processing |
 | **Backend** | Sync Engine | Custom Python | Offline-first data sync |
 | **Data** | Database | SQLite → PostgreSQL | Persistent data storage |
-| **Data** | Cloud Storage | AWS S3 | Backups & audit logs |
+| **Data** | Cloud Database | AWS RDS PostgreSQL | Production data storage |
 | **Infra** | Hosting | Render.com | Production deployment |
 | **Infra** | CI/CD | GitHub Actions | Automated testing & builds |
 
