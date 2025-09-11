@@ -25,7 +25,7 @@ Output:
 #>
 
 param (
-    [string]$BackendUrl = "http://localhost:8000",
+    [string]$BackendUrl = "https://waw-backend-a28q.onrender.com",
     [switch]$SingleFile = $false,
     [string]$AppName = "WellnessAtWork",
     [string]$AppVersion = "1.0.0"
@@ -120,6 +120,12 @@ $pyinstallerArgs += '--add-data'
 $pyinstallerArgs += 'shared;shared'
 $pyinstallerArgs += '--add-data'
 $pyinstallerArgs += 'backend;backend'
+
+# Also copy main icon to root for easier Windows API access
+if (Test-Path "assets/app.ico") {
+    $pyinstallerArgs += '--add-data'
+    $pyinstallerArgs += 'assets/app.ico;.'
+}
 
 # Hidden imports for required modules
 $hiddenImports = @(

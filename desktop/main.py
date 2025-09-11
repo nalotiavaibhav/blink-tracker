@@ -28,10 +28,10 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QProgressBar, QGroupBox,
     QGridLayout, QStatusBar, QDialog, QFormLayout, QLineEdit, QMessageBox,
     QComboBox, QMenuBar, QMenu, QTabWidget, QTableWidget, QTableWidgetItem,
-    QCheckBox
+    QCheckBox, QSystemTrayIcon
 )
 from PyQt6.QtCore import QTimer, QThread, pyqtSignal, Qt
-from PyQt6.QtGui import QFont, QPalette, QColor, QIcon
+from PyQt6.QtGui import QFont, QPalette, QColor, QIcon, QAction
 
 from desktop.eye_tracker import EyeTracker
 from shared.db import get_or_create_default_user
@@ -43,17 +43,63 @@ from shared.api import ApiClient
 def set_app_icon(widget):
     """Set the application icon for a QWidget (window or dialog)."""
     try:
-        icon_candidates = [
-            project_root / 'assets' / 'app.ico',
-            project_root / 'assets' / 'favicon.ico', 
-            project_root / 'assets' / 'android-chrome-192x192.png',
-        ]
+        # For packaged executable, assets are bundled differently
+        is_frozen = getattr(sys, 'frozen', False)
+        
+        if is_frozen:
+            # Running as packaged executable
+            # For directory builds, use executable location; for single-file builds, use _MEIPASS
+            if hasattr(sys, '_MEIPASS'):
+                # Single-file build (--onefile)
+                base_path = Path(sys._MEIPASS)
+            else:
+                # Directory build (default)
+                base_path = Path(sys.executable).parent / '_internal'
+            icon_candidates = [
+                base_path / 'assets' / 'app.ico',
+                base_path / 'assets' / 'favicon.ico', 
+                base_path / 'assets' / 'android-chrome-192x192.png',
+                base_path / 'app.ico',  # PyInstaller sometimes puts it in root
+                base_path / 'favicon.ico',
+            ]
+        else:
+            # Running in development
+            icon_candidates = [
+                project_root / 'assets' / 'app.ico',
+                project_root / 'assets' / 'favicon.ico', 
+                project_root / 'assets' / 'android-chrome-192x192.png',
+            ]
+        
         for candidate in icon_candidates:
             if candidate.exists():
                 widget.setWindowIcon(QIcon(str(candidate)))
-                break
+                return True
     except Exception:
         pass
+    return False
+
+
+def force_window_to_front(widget):
+    """Force a window or dialog to come to the front and get focus"""
+    try:
+        # Qt methods
+        widget.raise_()
+        widget.activateWindow()
+        
+        # Windows-specific forcing
+        import ctypes
+        hwnd = int(widget.winId())
+        
+        # Force window to foreground
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+        # Ensure it's not minimized
+        ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        # Temporarily make topmost to ensure visibility
+        ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # HWND_TOPMOST + SWP_NOMOVE + SWP_NOSIZE + SWP_SHOWWINDOW
+        # Remove topmost flag for normal behavior
+        ctypes.windll.user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # HWND_NOTOPMOST
+    except:
+        pass  # Fail silently if forcing fails
 
 
 def get_user_friendly_error(exception, base_url=""):
@@ -204,6 +250,9 @@ class WaWMainWindow(QMainWindow):
         # Set application icon
         set_app_icon(self)
         
+        # Initialize system tray
+        self.init_system_tray()
+        
         # Additional Windows taskbar icon setup
         try:
             import ctypes
@@ -294,6 +343,134 @@ class WaWMainWindow(QMainWindow):
 
         # Center window
         self.center_on_screen()
+
+    def init_system_tray(self):
+        """Initialize system tray icon with context menu."""
+        # Check if system tray is available
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            print("System tray is not available on this system")
+            return
+        
+        # Create system tray icon
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        # Set the tray icon (same as window icon)
+        tray_icon_path = self.get_app_icon_path()
+        if tray_icon_path:
+            self.tray_icon.setIcon(QIcon(str(tray_icon_path)))
+        
+        # Create context menu for tray icon
+        tray_menu = QMenu()
+        
+        # Show/Hide action
+        self.show_hide_action = QAction("Show", self)
+        self.show_hide_action.triggered.connect(self.toggle_window_visibility)
+        tray_menu.addAction(self.show_hide_action)
+        
+        tray_menu.addSeparator()
+        
+        # Start/Stop tracking action
+        self.tray_tracking_action = QAction("Start Tracking", self)
+        self.tray_tracking_action.triggered.connect(self.toggle_tracking_from_tray)
+        tray_menu.addAction(self.tray_tracking_action)
+        
+        tray_menu.addSeparator()
+        
+        # Exit action
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close_application)
+        tray_menu.addAction(exit_action)
+        
+        # Set the context menu
+        self.tray_icon.setContextMenu(tray_menu)
+        
+        # Connect double-click to show/hide
+        self.tray_icon.activated.connect(self.tray_icon_activated)
+        
+        # Set tooltip
+        self.tray_icon.setToolTip("Wellness at Work - Eye Tracker")
+        
+        # Show the tray icon
+        self.tray_icon.show()
+        
+        # Update tray icon based on current state
+        self.update_tray_icon_state()
+
+    def get_app_icon_path(self):
+        """Get the path to the application icon."""
+        try:
+            # For packaged executable, assets are bundled differently
+            is_frozen = getattr(sys, 'frozen', False)
+            
+            if is_frozen:
+                # Running as packaged executable
+                if hasattr(sys, '_MEIPASS'):
+                    # Single-file build (--onefile)
+                    base_path = Path(sys._MEIPASS)
+                else:
+                    # Directory build (default)
+                    base_path = Path(sys.executable).parent / '_internal'
+                icon_candidates = [
+                    base_path / 'assets' / 'app.ico',
+                    base_path / 'assets' / 'favicon.ico', 
+                    base_path / 'assets' / 'android-chrome-192x192.png',
+                    base_path / 'app.ico',
+                    base_path / 'favicon.ico',
+                ]
+            else:
+                # Running in development
+                icon_candidates = [
+                    project_root / 'assets' / 'app.ico',
+                    project_root / 'assets' / 'favicon.ico', 
+                    project_root / 'assets' / 'android-chrome-192x192.png',
+                ]
+            
+            for candidate in icon_candidates:
+                if candidate.exists():
+                    return candidate
+        except Exception:
+            pass
+        return None
+
+    def toggle_window_visibility(self):
+        """Toggle window visibility (show/hide)."""
+        if self.isVisible():
+            self.hide()
+            self.show_hide_action.setText("Show")
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            force_window_to_front(self)
+            self.show_hide_action.setText("Hide")
+
+    def toggle_tracking_from_tray(self):
+        """Toggle tracking from system tray."""
+        if hasattr(self, 'start_stop_btn'):
+            self.start_stop_btn.click()
+
+    def update_tray_icon_state(self):
+        """Update tray icon and menu based on current tracking state."""
+        if hasattr(self, 'tray_tracking_action'):
+            if hasattr(self, 'eye_tracker') and self.eye_tracker and self.eye_tracker.is_running:
+                self.tray_tracking_action.setText("Stop Tracking")
+                if hasattr(self, 'tray_icon'):
+                    self.tray_icon.setToolTip("Wellness at Work - Tracking Active")
+            else:
+                self.tray_tracking_action.setText("Start Tracking")
+                if hasattr(self, 'tray_icon'):
+                    self.tray_icon.setToolTip("Wellness at Work - Tracking Stopped")
+
+    def tray_icon_activated(self, reason):
+        """Handle tray icon activation (click, double-click, etc.)."""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.toggle_window_visibility()
+
+    def close_application(self):
+        """Close the application completely."""
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        self.close()
 
     def init_menu_bar(self):
         """Initialize menu bar with theme selection."""
@@ -793,6 +970,8 @@ class WaWMainWindow(QMainWindow):
             self.ui_update_timer = QTimer()
             self.ui_update_timer.timeout.connect(self.update_tracking_display)
             self.ui_update_timer.start(1000)
+            # Update system tray icon state
+            self.update_tray_icon_state()
         else:
             if not (self.api and self.api.is_authed):
                 self.status_bar.showMessage("Please login first (Start Tracking disabled)")
@@ -876,6 +1055,8 @@ class WaWMainWindow(QMainWindow):
         self.session_duration_label.setText("00:00:00")
         self.last_blink_label.setText("No blinks yet")
         self.session_id_label.setText("-")
+        # Update system tray icon state
+        self.update_tray_icon_state()
 
     def logout(self):
         # Stop tracking if active
@@ -1061,11 +1242,31 @@ class WaWMainWindow(QMainWindow):
             print(f"Session load error: {e}")
 
     def closeEvent(self, event):
-        if self.eye_tracker:
-            self.eye_tracker.stop_tracking()
-        if self.performance_monitor:
-            self.performance_monitor.stop()
-        event.accept()
+        # Check if system tray is available and the close button was clicked
+        if hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
+            # Hide to system tray instead of closing
+            self.hide()
+            self.show_hide_action.setText("Show")
+            event.ignore()
+            
+            # Show a notification the first time
+            if not hasattr(self, '_tray_notification_shown'):
+                self.tray_icon.showMessage(
+                    "Wellness at Work",
+                    "Application minimized to system tray. Right-click the tray icon to access options.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    3000  # 3 seconds
+                )
+                self._tray_notification_shown = True
+        else:
+            # No system tray available, close normally
+            if self.eye_tracker:
+                self.eye_tracker.stop_tracking()
+            if self.performance_monitor:
+                self.performance_monitor.stop()
+            if hasattr(self, 'tray_icon'):
+                self.tray_icon.hide()
+            event.accept()
 
     # --- Utility ---------------------------------------------------------
     def center_on_screen(self):
@@ -1627,6 +1828,7 @@ def main():
     try:
         import ctypes
         from ctypes import wintypes
+        
         # Tell Windows this is a distinct app (not python.exe)
         myappid = 'wellness.at.work.eyetracker.1.0'
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -1635,17 +1837,57 @@ def main():
         if hasattr(ctypes.windll, 'shell32'):
             # Force taskbar to refresh
             ctypes.windll.user32.SetProcessDPIAware()
+            
+            # Set process name to help with taskbar grouping
+            try:
+                # Set process description
+                kernel32 = ctypes.windll.kernel32
+                kernel32.SetConsoleTitleW = kernel32.SetConsoleTitleW
+                kernel32.SetConsoleTitleW.argtypes = [ctypes.c_wchar_p]
+                kernel32.SetConsoleTitleW("Wellness at Work")
+                
+                # Force taskbar refresh using Shell API
+                shell32 = ctypes.windll.shell32
+                SHChangeNotify = shell32.SHChangeNotifyW
+                SHChangeNotify.argtypes = [wintypes.LONG, wintypes.UINT, ctypes.c_void_p, ctypes.c_void_p]
+                SHCNE_ASSOCCHANGED = 0x08000000
+                SHCNF_IDLIST = 0x0000
+                SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
+            except:
+                pass
     except Exception:
         pass
     
     # Set application icon
     app_icon = None
     try:
-        icon_candidates = [
-            project_root / 'assets' / 'app.ico',
-            project_root / 'assets' / 'favicon.ico', 
-            project_root / 'assets' / 'android-chrome-192x192.png',
-        ]
+        # For packaged executable, assets are bundled differently
+        is_frozen = getattr(sys, 'frozen', False)
+        
+        if is_frozen:
+            # Running as packaged executable
+            # For directory builds, use executable location; for single-file builds, use _MEIPASS
+            if hasattr(sys, '_MEIPASS'):
+                # Single-file build (--onefile)
+                base_path = Path(sys._MEIPASS)
+            else:
+                # Directory build (default)
+                base_path = Path(sys.executable).parent / '_internal'
+            icon_candidates = [
+                base_path / 'assets' / 'app.ico',
+                base_path / 'assets' / 'favicon.ico', 
+                base_path / 'assets' / 'android-chrome-192x192.png',
+                base_path / 'app.ico',  # PyInstaller sometimes puts it in root
+                base_path / 'favicon.ico',
+            ]
+        else:
+            # Running in development
+            icon_candidates = [
+                project_root / 'assets' / 'app.ico',
+                project_root / 'assets' / 'favicon.ico', 
+                project_root / 'assets' / 'android-chrome-192x192.png',
+            ]
+        
         for candidate in icon_candidates:
             if candidate.exists():
                 app_icon = QIcon(str(candidate))
@@ -1671,6 +1913,10 @@ def main():
 
     if not initial_auth:
         login = LoginDialog(default_base_url=CONFIG.api_base_url)
+        
+        # Ensure login dialog comes to front
+        force_window_to_front(login)
+            
         if login.exec() != QDialog.DialogCode.Accepted:
             sys.exit(0)
         base_url, token, user = login.get_result()
@@ -1688,6 +1934,9 @@ def main():
     
     window.show()
     
+    # Ensure window comes to front and gets focus
+    force_window_to_front(window)
+    
     # Force taskbar icon update after window is shown
     def update_taskbar_icon():
         try:
@@ -1699,6 +1948,7 @@ def main():
                 # Try to force Windows taskbar refresh
                 import ctypes
                 import ctypes.wintypes
+                from ctypes import wintypes
                 hwnd = int(window.winId())
                 
                 # Constants for icon messages
@@ -1706,23 +1956,103 @@ def main():
                 ICON_SMALL = 0
                 ICON_BIG = 1
                 
-                # Try to load and set icon via Windows API
-                icon_path = str(project_root / 'assets' / 'app.ico')
-                if Path(icon_path).exists():
-                    # Load icon using Windows API
-                    hicon = ctypes.windll.user32.LoadImageW(
-                        0, icon_path, 1, 0, 0, 0x00000010 | 0x00008000
-                    )
-                    if hicon:
-                        # Set both small and large icons
-                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
-                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+                # Additional constants for taskbar manipulation
+                WM_COMMAND = 0x0111
+                TB_REFRESH = 0x0418
+                
+                # Get the actual executable icon and force set it
+                try:
+                    # Try to extract icon from the current executable
+                    hicon_large = ctypes.windll.shell32.ExtractIconW(0, sys.executable, 0)
+                    hicon_small = ctypes.windll.shell32.ExtractIconW(0, sys.executable, 0)
+                    
+                    if hicon_large and hicon_large > 1:  # Valid icon handle
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_large)
+                    if hicon_small and hicon_small > 1:  # Valid icon handle
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
                         
-        except Exception as e:
-            print(f"Icon update error: {e}")  # Debug info
+                    # Force taskbar to update its icon cache
+                    try:
+                        # Find the taskbar window
+                        taskbar_hwnd = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+                        if taskbar_hwnd:
+                            # Try to refresh the taskbar
+                            ctypes.windll.user32.PostMessageW(taskbar_hwnd, WM_COMMAND, TB_REFRESH, 0)
+                            
+                        # Also try to update the window's class icon
+                        ctypes.windll.user32.SetClassLongPtrW(hwnd, -14, hicon_large)  # GCL_HICON
+                        ctypes.windll.user32.SetClassLongPtrW(hwnd, -34, hicon_small)  # GCL_HICONSM
+                        
+                        # Force window redraw
+                        ctypes.windll.user32.RedrawWindow(hwnd, None, None, 0x0001 | 0x0004)  # RDW_INVALIDATE | RDW_UPDATENOW
+                    except:
+                        pass
+                except:
+                    pass
+                
+                # Fallback: Try to load and set icon via Windows API
+                is_frozen = getattr(sys, 'frozen', False)
+                
+                if is_frozen:
+                    # Running as packaged executable
+                    # For directory builds, use executable location; for single-file builds, use _MEIPASS
+                    if hasattr(sys, '_MEIPASS'):
+                        # Single-file build (--onefile)
+                        base_path = Path(sys._MEIPASS)
+                    else:
+                        # Directory build (default)
+                        base_path = Path(sys.executable).parent / '_internal'
+                    icon_candidates = [
+                        base_path / 'assets' / 'app.ico',
+                        base_path / 'app.ico',
+                        base_path / 'assets' / 'favicon.ico',
+                    ]
+                else:
+                    # Running in development
+                    icon_candidates = [project_root / 'assets' / 'app.ico']
+                
+                for icon_candidate in icon_candidates:
+                    icon_path = str(icon_candidate)
+                    if Path(icon_path).exists():
+                        # Load icon using Windows API
+                        try:
+                            hicon = ctypes.windll.user32.LoadImageW(
+                                0, icon_path, 1, 32, 32, 0x00000010 | 0x00008000
+                            )
+                            if hicon:
+                                # Set both small and large icons
+                                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+                                # Try to set class icon too
+                                ctypes.windll.user32.SetClassLongPtrW(hwnd, -34, hicon)  # GCL_HICONSM
+                                
+                            # Load large icon
+                            hicon_large = ctypes.windll.user32.LoadImageW(
+                                0, icon_path, 1, 48, 48, 0x00000010 | 0x00008000
+                            )
+                            if hicon_large:
+                                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_large)
+                                # Try to set class icon too
+                                ctypes.windll.user32.SetClassLongPtrW(hwnd, -14, hicon_large)  # GCL_HICON
+                                
+                            # Force taskbar refresh after setting icons
+                            try:
+                                taskbar_hwnd = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+                                if taskbar_hwnd:
+                                    ctypes.windll.user32.PostMessageW(taskbar_hwnd, WM_COMMAND, TB_REFRESH, 0)
+                            except:
+                                pass
+                        except:
+                            pass
+                        break
+                        
+        except Exception:
+            pass  # Fail silently in production
     
-    # Update icon after a brief delay to ensure window is fully initialized
+    # Update icon after multiple delays to ensure window is fully initialized
+    # Sometimes the taskbar needs several attempts to register the icon
     QTimer.singleShot(500, update_taskbar_icon)
+    QTimer.singleShot(1500, update_taskbar_icon)  # Second attempt
+    QTimer.singleShot(3000, update_taskbar_icon)  # Third attempt
     
     sys.exit(app.exec())
 

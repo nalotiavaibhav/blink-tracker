@@ -1,0 +1,354 @@
+name: 🚀 Wellness at Work - CI/CD Pipeline
+
+# Trigger the workflow on push and pull requests to main branch
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+# Environment variables for the entire workflow
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+
+jobs:
+  # Job 1: Code Quality and Linting
+  code-quality:
+    name: 🔍 Code Quality & Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: 📦 Cache Python Dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+        
+    - name: 🔧 Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort mypy
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements.backend.txt ]; then pip install -r requirements.backend.txt; fi
+        
+    - name: 🎨 Code Formatting Check (Black)
+      run: |
+        black --check --diff backend/ desktop/ shared/
+        
+    - name: 📏 Import Sorting Check (isort)
+      run: |
+        isort --check-only --diff backend/ desktop/ shared/
+        
+    - name: 🔍 Code Linting (Flake8)
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 backend/ desktop/ shared/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings. GitHub editor is 127 chars wide
+        flake8 backend/ desktop/ shared/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  # Job 2: Backend API Testing
+  backend-tests:
+    name: 🌐 Backend API Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_waw
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: 📦 Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-asyncio httpx
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements.backend.txt ]; then pip install -r requirements.backend.txt; fi
+        
+    - name: 🧪 Run Backend Tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_waw
+        JWT_SECRET: test_secret_key_for_ci
+        DEBUG_OTP: true
+      run: |
+        cd backend
+        python -m pytest ../tests/backend/ -v --tb=short
+        
+    - name: 🔒 Security Vulnerability Scan
+      run: |
+        pip install safety
+        safety check --short-report
+
+  # Job 3: Frontend Testing
+  frontend-tests:
+    name: 🎨 Frontend Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: dashboard/package-lock.json
+        
+    - name: 📦 Install Dependencies
+      working-directory: ./dashboard
+      run: npm ci
+      
+    - name: 🔍 Lint Frontend Code
+      working-directory: ./dashboard
+      run: npm run lint
+      
+    - name: 🏗️ Build Frontend
+      working-directory: ./dashboard
+      env:
+        NEXT_PUBLIC_API_BASE: http://localhost:8000
+      run: npm run build
+      
+    - name: 🧪 Run Frontend Tests
+      working-directory: ./dashboard
+      run: npm test -- --passWithNoTests
+
+  # Job 4: Desktop Application Testing
+  desktop-tests:
+    name: 🖥️ Desktop App Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: 🔧 Install System Dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx libegl1-mesa libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 libxi6 libxtst6
+        
+    - name: 📦 Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-qt
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        
+    - name: 🧪 Run Desktop Tests
+      env:
+        QT_QPA_PLATFORM: offscreen
+      run: |
+        python -m pytest tests/desktop/ -v --tb=short
+
+  # Job 5: Integration Tests
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: [backend-tests, desktop-tests]
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_waw
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: 📦 Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-asyncio httpx
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements.backend.txt ]; then pip install -r requirements.backend.txt; fi
+        
+    - name: 🔄 Start Backend Server
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_waw
+        JWT_SECRET: test_secret_key_for_ci
+        DEBUG_OTP: true
+      run: |
+        cd backend
+        python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
+        sleep 10  # Wait for server to start
+        
+    - name: 🧪 Run Integration Tests
+      env:
+        API_BASE_URL: http://localhost:8000
+        QT_QPA_PLATFORM: offscreen
+      run: |
+        python -m pytest tests/integration/ -v --tb=short
+
+  # Job 6: Build and Package (Windows)
+  build-windows:
+    name: 🏗️ Build Windows Executable
+    runs-on: windows-latest
+    needs: [code-quality, backend-tests, desktop-tests]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: 📦 Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+        
+    - name: 🏗️ Build Windows Executable
+      run: |
+        .\build_desktop_exe.ps1 -BackendUrl "https://waw-backend-a28q.onrender.com" -SingleFile
+        
+    - name: 📤 Upload Windows Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: wellness-at-work-windows
+        path: dist/WellnessAtWork.exe
+        retention-days: 30
+
+  # Job 7: Build macOS (if on main branch)
+  build-macos:
+    name: 🍎 Build macOS Application
+    runs-on: macos-latest
+    needs: [code-quality, backend-tests, desktop-tests]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: 📦 Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        
+    - name: 🏗️ Build macOS Application
+      run: |
+        pyinstaller --name WellnessAtWork \
+          --windowed \
+          --icon assets/app.ico \
+          --add-data "assets:assets" \
+          --add-data "desktop:desktop" \
+          --add-data "shared:shared" \
+          --add-data "backend:backend" \
+          --hidden-import cv2 \
+          --hidden-import mediapipe \
+          --hidden-import PyQt6 \
+          --collect-all mediapipe \
+          desktop/main.py
+          
+    - name: 📦 Create DMG Package
+      run: |
+        # Install create-dmg
+        brew install create-dmg
+        
+        # Create DMG
+        create-dmg \
+          --volname "Wellness at Work" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "WellnessAtWork.app" 200 190 \
+          --hide-extension "WellnessAtWork.app" \
+          --app-drop-link 600 185 \
+          "WellnessAtWork.dmg" \
+          "dist/WellnessAtWork.app"
+          
+    - name: 📤 Upload macOS Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: wellness-at-work-macos
+        path: WellnessAtWork.dmg
+        retention-days: 30
+
+  # Job 8: Deployment (Production)
+  deploy:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [integration-tests, build-windows]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🚀 Deploy to Render
+      run: |
+        echo "Deployment triggered! Render.com will auto-deploy from main branch."
+        echo "Backend: https://waw-backend-a28q.onrender.com"
+        echo "Dashboard: https://waw-dashboard-latest.onrender.com"
+        
+    - name: 📊 Update Release Notes
+      run: |
+        echo "## 🎉 New Release Deployed" >> release-notes.md
+        echo "- **Backend**: https://waw-backend-a28q.onrender.com" >> release-notes.md
+        echo "- **Dashboard**: https://waw-dashboard-latest.onrender.com" >> release-notes.md
+        echo "- **Windows Executable**: Available in CI artifacts" >> release-notes.md
+        echo "- **Build Date**: $(date)" >> release-notes.md
+        
+    - name: 📤 Upload Release Notes
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-notes
+        path: release-notes.md

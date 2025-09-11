@@ -1,0 +1,41 @@
+name: 🧪 Quick Test Suite
+
+# Lightweight testing workflow for faster feedback
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Quick smoke tests
+  smoke-tests:
+    name: 🔥 Smoke Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: 📦 Install Test Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.test.txt
+        
+    - name: 🧪 Run Unit Tests Only
+      env:
+        QT_QPA_PLATFORM: offscreen
+      run: |
+        python -m pytest tests/ -m "not slow and not network" --tb=short -v
+        
+    - name: 📊 Test Summary
+      run: |
+        echo "✅ Smoke tests completed successfully!"
