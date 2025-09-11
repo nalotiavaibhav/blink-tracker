@@ -133,7 +133,7 @@ jobs:
       
     - name: 🔍 Lint Frontend Code
       working-directory: ./dashboard
-      run: npm run lint
+      run: npx eslint . --ext .js,.jsx --config eslint.config.mjs
       
     - name: 🏗️ Build Frontend
       working-directory: ./dashboard
@@ -270,11 +270,12 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         
-    - name: 📦 Install Dependencies
+    - name: 🐍 Create and prepare virtual environment
       run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+        python -m venv .venv
+        .\.venv\Scripts\python -m pip install --upgrade pip
+        if (Test-Path requirements.txt) { .\.venv\Scripts\pip install -r requirements.txt }
+        .\.venv\Scripts\pip install pyinstaller pillow
         
     - name: 🏗️ Build Windows Executable
       run: |
